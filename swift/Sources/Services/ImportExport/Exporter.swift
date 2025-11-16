@@ -74,18 +74,20 @@ public final class DataExporter {
 
         case .goals:
             let repository = GoalRepository(database: database)
-            let exports = try await repository.fetchForExport(from: startDate, to: endDate)
-            return try formatData(exports, format: format, csvFormatter: csvFormatter.formatGoals)
+            // Use canonical GoalData directly for both display and export
+            let goals = try await repository.fetchAll(from: startDate, to: endDate)
+            return try formatData(goals, format: format, csvFormatter: csvFormatter.formatGoals)
 
         case .values:
             let repository = PersonalValueRepository(database: database)
-            let exports = try await repository.fetchForExport(from: startDate, to: endDate)
-            return try formatData(exports, format: format, csvFormatter: csvFormatter.formatValues)
+            // Use canonical PersonalValueData directly for both display and export
+            let values = try await repository.fetchAll(from: startDate, to: endDate)
+            return try formatData(values, format: format, csvFormatter: csvFormatter.formatValues)
 
         case .terms:
             let repository = TimePeriodRepository(database: database)
-            let exports = try await repository.fetchForExport(from: startDate, to: endDate)
-            return try formatData(exports, format: format, csvFormatter: csvFormatter.formatTerms)
+            let terms = try await repository.fetchAll()
+            return try formatData(terms, format: format, csvFormatter: csvFormatter.formatTerms)
         }
     }
 

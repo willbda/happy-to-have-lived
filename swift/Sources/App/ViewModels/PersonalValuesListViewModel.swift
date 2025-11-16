@@ -1,10 +1,11 @@
 //
 // PersonalValuesListViewModel.swift
 // Written by Claude Code on 2025-11-13
+// Refactored to PersonalValueData on 2025-11-16
 //
 // PURPOSE:
 // ViewModel for PersonalValuesListView - manages values list state and repository access.
-// Eliminates @FetchAll pattern in favor of direct repository access.
+// Uses canonical PersonalValueData for both display and export.
 //
 // ARCHITECTURE PATTERN:
 // - @Observable for automatic UI updates (NOT ObservableObject)
@@ -15,9 +16,10 @@
 // DATA FLOW:
 // PersonalValueRepository → PersonalValuesListViewModel → PersonalValuesListView
 //
-// DESIGN NOTE:
-// PersonalValue is simpler than Goal/Action - no child relationships to aggregate.
-// Repository uses #sql pattern (already established), no JSON aggregation needed.
+// CANONICAL PATTERN:
+// - Stores PersonalValueData (not PersonalValue)
+// - Repository returns PersonalValueData directly
+// - Transform to PersonalValue at display boundary if needed (via .asValue)
 //
 
 import Foundation
@@ -56,8 +58,8 @@ public final class PersonalValuesListViewModel {
 
     // MARK: - Observable State (internal visibility)
 
-    /// Values data for display
-    var values: [PersonalValue] = []
+    /// Values data for display (canonical PersonalValueData)
+    var values: [PersonalValueData] = []
 
     /// Loading state for UI feedback
     var isLoading: Bool = false
@@ -74,7 +76,7 @@ public final class PersonalValuesListViewModel {
 
     /// Values grouped by level for section display
     /// Performance: O(n) grouping, computed on-demand
-    var groupedValues: [ValueLevel: [PersonalValue]] {
+    var groupedValues: [String: [PersonalValueData]] {
         Dictionary(grouping: values, by: \.valueLevel)
     }
 
@@ -124,15 +126,19 @@ public final class PersonalValuesListViewModel {
 
     /// Delete a value and reload the list
     ///
-    /// - Parameter value: The value to delete
+    /// - Parameter valueData: The PersonalValueData to delete
     ///
     /// **Implementation**: Uses PersonalValueCoordinator for atomic delete
+    /// **Transform**: Converts PersonalValueData to PersonalValue for coordinator
     /// **Side Effects**: Reloads values list after successful deletion
-    public func deleteValue(_ value: PersonalValue) async {
+    public func deleteValue(_ valueData: PersonalValueData) async {
         isLoading = true
         errorMessage = nil
 
         do {
+            // Transform canonical data type to entity for coordinator
+            let value = valueData.asValue
+
             // Use coordinator for atomic delete
             let coordinator = PersonalValueCoordinator(database: database)
             try await coordinator.delete(value: value)

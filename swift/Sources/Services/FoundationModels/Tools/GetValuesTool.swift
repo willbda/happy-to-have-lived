@@ -71,7 +71,8 @@ public struct GetValuesTool: Tool {
 
         // Apply filters
         if let level = arguments.valueLevel {
-            values = values.filter { $0.valueLevel.rawValue == level }
+            // PersonalValueData stores valueLevel as String (not enum)
+            values = values.filter { $0.valueLevel == level }
         }
 
         if let domain = arguments.lifeDomain {
@@ -79,12 +80,12 @@ public struct GetValuesTool: Tool {
         }
 
         if let minPriority = arguments.minPriority {
-            values = values.filter { ($0.priority ?? 0) >= minPriority }
+            values = values.filter { $0.priority >= minPriority }
         }
 
         // Sort by priority (highest first) and apply limit
         values = values
-            .sorted { ($0.priority ?? 0) > ($1.priority ?? 0) }
+            .sorted { $0.priority > $1.priority }
             .prefix(arguments.limit)
             .map { $0 }
 
@@ -92,10 +93,10 @@ public struct GetValuesTool: Tool {
         let summaries = values.map { value in
             ValueSummary(
                 id: value.id.uuidString,
-                title: value.title ?? "Untitled Value",
+                title: value.title,
                 description: value.detailedDescription,
-                priority: value.priority ?? 50,
-                valueLevel: value.valueLevel.rawValue,
+                priority: value.priority,
+                valueLevel: value.valueLevel,  // Already a String
                 lifeDomain: value.lifeDomain,
                 alignmentGuidance: value.alignmentGuidance
             )

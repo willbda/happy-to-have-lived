@@ -2,6 +2,7 @@
 // PersonalValueRepository.swift
 // Written by Claude Code on 2025-11-08
 // Refactored to #sql pattern on 2025-11-10
+// Refactored to canonical PersonalValueData on 2025-11-16
 //
 // PURPOSE:
 // Read coordinator for PersonalValue entities - centralizes query logic.
@@ -17,6 +18,11 @@
 // - Type-safe SQL with compile-time table/column checking
 // - Direct SQL for clarity and performance
 // - FetchKeyRequest pattern for complex multi-value queries
+//
+// CANONICAL PATTERN:
+// - fetchAll() returns PersonalValueData (not PersonalValue)
+// - fetchAllLegacy() deprecated but available for backward compatibility
+// - PersonalValueData serves both display and export needs
 //
 
 import Foundation
@@ -77,8 +83,11 @@ public final class PersonalValueRepository: Sendable {
 
     // MARK: - Read Operations
 
-    /// Fetch all personal values ordered by priority (highest priority first)
-    public func fetchAll() async throws -> [PersonalValue] {
+    /// Fetch all personal values ordered by priority (highest priority first) - LEGACY
+    ///
+    /// - Warning: Deprecated. Use fetchAll() which returns canonical PersonalValueData.
+    @available(*, deprecated, renamed: "fetchAll", message: "Use fetchAll() which returns canonical PersonalValueData. Transform with .asValue if needed.")
+    public func fetchAllLegacy() async throws -> [PersonalValue] {
         do {
             return try await database.read { db in
                 try #sql(
@@ -89,6 +98,38 @@ public final class PersonalValueRepository: Sendable {
                     """,
                     as: PersonalValue.self
                 ).fetchAll(db)
+            }
+        } catch {
+            throw mapDatabaseError(error)
+        }
+    }
+
+    /// Fetch all personal values as canonical PersonalValueData (for both display and export)
+    ///
+    /// **CANONICAL PATTERN**: Returns PersonalValueData that's already Codable
+    /// **Usage**:
+    /// - Export: Use directly (already Codable)
+    /// - Display: Use PersonalValueData directly or transform with `.asValue` if needed
+    /// - ViewModels: Store PersonalValueData, not PersonalValue
+    ///
+    /// **Query Strategy**:
+    /// - Simple LEFT JOIN with goalRelevances for aligned goal IDs
+    /// - GROUP BY + json_group_array for denormalization
+    /// - No N+1 queries (single query fetches all data)
+    ///
+    /// - Parameters:
+    ///   - startDate: Optional filter for values created or modified after this date
+    ///   - endDate: Optional filter for values created or modified before this date
+    public func fetchAll(
+        from startDate: Date? = nil,
+        to endDate: Date? = nil
+    ) async throws -> [PersonalValueData] {
+        do {
+            return try await database.read { db in
+                try FetchAllPersonalValueDataRequest(
+                    startDate: startDate,
+                    endDate: endDate
+                ).fetch(db)
             }
         } catch {
             throw mapDatabaseError(error)
@@ -152,9 +193,12 @@ public final class PersonalValueRepository: Sendable {
         }
     }
 
-    // MARK: - Export Operations
+    // MARK: - Export Operations (DEPRECATED)
 
-    /// Fetch denormalized export-ready data with optional date filtering
+    /// Fetch denormalized export-ready data with optional date filtering - DEPRECATED
+    ///
+    /// - Warning: Deprecated. Use fetchAll() which returns canonical PersonalValueData.
+    ///            PersonalValueData is already Codable and serves both display and export.
     ///
     /// Returns flat PersonalValueExport records optimized for CSV/JSON serialization.
     /// Includes aligned goal count computed from goalRelevances table.
@@ -172,14 +216,13 @@ public final class PersonalValueRepository: Sendable {
     ///
     /// EXAMPLE:
     /// ```swift
-    /// // Export all values
-    /// let all = try await repository.fetchForExport()
+    /// // OLD (deprecated):
+    /// let exports = try await repository.fetchForExport()
     ///
-    /// // Export values created in last 30 days
-    /// let recent = try await repository.fetchForExport(
-    ///     from: Date().addingTimeInterval(-30 * 86400)
-    /// )
+    /// // NEW (use instead):
+    /// let values = try await repository.fetchAll()
     /// ```
+    @available(*, deprecated, message: "Use fetchAll() which returns canonical PersonalValueData. PersonalValueData is already Codable for export.")
     public func fetchForExport(
         from startDate: Date? = nil,
         to endDate: Date? = nil
@@ -316,6 +359,110 @@ public final class PersonalValueRepository: Sendable {
 }
 
 // MARK: - Fetch Requests
+
+/// Fetch all personal values with aligned goal IDs
+///
+/// **QUERY PATTERN**: Single query with LEFT JOIN and json_group_array
+/// **Performance**: O(n) where n = number of values (no N+1 problem)
+///
+/// SQL Strategy:
+/// ```sql
+/// SELECT pv.*, COALESCE(json_group_array(gr.goalId), '[]') as alignedGoalIdsJson
+/// FROM personalValues pv
+/// LEFT JOIN goalRelevances gr ON pv.id = gr.valueId
+/// GROUP BY pv.id
+/// ORDER BY pv.priority ASC
+/// ```
+private struct FetchAllPersonalValueDataRequest: FetchKeyRequest {
+    typealias Value = [PersonalValueData]
+
+    let startDate: Date?
+    let endDate: Date?
+
+    func fetch(_ db: Database) throws -> [PersonalValueData] {
+        // Use raw SQL with json_group_array for efficient aggregation
+        var sql = """
+            SELECT
+                pv.id,
+                pv.title,
+                pv.detailedDescription,
+                pv.freeformNotes,
+                pv.logTime,
+                pv.priority,
+                pv.valueLevel,
+                pv.lifeDomain,
+                pv.alignmentGuidance,
+                COALESCE(
+                    (SELECT json_group_array(gr.goalId)
+                     FROM goalRelevances gr
+                     WHERE gr.valueId = pv.id),
+                    '[]'
+                ) as alignedGoalIdsJson
+            FROM personalValues pv
+            """
+
+        var arguments: [any DatabaseValueConvertible] = []
+
+        // Add date filters if provided
+        var whereClauses: [String] = []
+        if let startDate = startDate {
+            whereClauses.append("pv.logTime >= ?")
+            arguments.append(startDate)
+        }
+        if let endDate = endDate {
+            whereClauses.append("pv.logTime <= ?")
+            arguments.append(endDate)
+        }
+
+        if !whereClauses.isEmpty {
+            sql += " WHERE " + whereClauses.joined(separator: " AND ")
+        }
+
+        sql += "\nORDER BY pv.priority ASC"
+
+        // Define intermediate row type for decoding
+        struct ValueRow: Decodable, FetchableRecord {
+            let id: UUID
+            let title: String?
+            let detailedDescription: String?
+            let freeformNotes: String?
+            let logTime: Date
+            let priority: Int?
+            let valueLevel: ValueLevel
+            let lifeDomain: String?
+            let alignmentGuidance: String?
+            let alignedGoalIdsJson: String
+        }
+
+        // Execute query
+        let rows = try ValueRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+
+        // Transform to PersonalValueData
+        return try rows.map { row in
+            // Parse JSON array of goal IDs
+            let alignedGoalIds: [UUID]
+            if let jsonData = row.alignedGoalIdsJson.data(using: .utf8),
+               let uuidStrings = try? JSONDecoder().decode([String].self, from: jsonData) {
+                alignedGoalIds = uuidStrings.compactMap { UUID(uuidString: $0) }
+            } else {
+                alignedGoalIds = []
+            }
+
+            return PersonalValueData(
+                id: row.id,
+                title: row.title ?? "",
+                detailedDescription: row.detailedDescription,
+                freeformNotes: row.freeformNotes,
+                logTime: row.logTime,
+                priority: row.priority ?? row.valueLevel.defaultPriority,
+                valueLevel: row.valueLevel.rawValue,
+                lifeDomain: row.lifeDomain,
+                alignmentGuidance: row.alignmentGuidance,
+                alignedGoalIds: alignedGoalIds
+            )
+        }
+    }
+}
 
 /// Check if a title exists (case-insensitive)
 private struct ExistsByTitleRequest: FetchKeyRequest {

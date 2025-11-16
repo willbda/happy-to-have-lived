@@ -70,7 +70,8 @@ public struct CSVFormatter {
     // MARK: - Goals CSV
 
     /// Encode goals to CSV format
-    public func formatGoals(_ goals: [GoalExport]) throws -> Data {
+    /// Now uses canonical GoalData type directly
+    public func formatGoals(_ goals: [GoalData]) throws -> Data {
         var csv =
             "ID,Title,Description,Notes,LogTime,Importance,Urgency,StartDate,TargetDate,ActionPlan,TermLength,MeasureTargets,AlignedValues\n"
 
@@ -79,11 +80,13 @@ public struct CSVFormatter {
         let formatter = ISO8601DateFormatter()
 
         for goal in goals {
+            // Use GoalData's measureTargets directly
             let measuresJson = try encoder.encode(goal.measureTargets)
             let measuresString =
                 String(data: measuresJson, encoding: .utf8)?
                 .replacingOccurrences(of: "\"", with: "\"\"") ?? ""
 
+            // Use GoalData's convenience accessor for value IDs
             let valuesString = goal.alignedValueIds
                 .map { $0.uuidString }
                 .joined(separator: ";")
@@ -112,25 +115,17 @@ public struct CSVFormatter {
 
     // MARK: - Values CSV
 
-    /// Encode personal values to CSV format
-    public func formatValues(_ values: [PersonalValueExport]) throws -> Data {
-        var csv =
-            "ID,Title,Description,Notes,LogTime,Priority,Level,LifeDomain,AlignmentGuidance,AlignedGoalCount\n"
+    /// Encode personal values to CSV format using canonical PersonalValueData
+    ///
+    /// **CANONICAL PATTERN**: Uses PersonalValueData.csvRow and PersonalValueData.csvHeader
+    /// for consistent formatting across the app.
+    public func formatValues(_ values: [PersonalValueData]) throws -> Data {
+        // Use canonical CSV header from PersonalValueData
+        var csv = PersonalValueData.csvHeader.joined(separator: ",") + "\n"
 
         for value in values {
-            let row = [
-                value.id,
-                escapeCSV(value.title),
-                escapeCSV(value.detailedDescription ?? ""),
-                escapeCSV(value.freeformNotes ?? ""),
-                value.logTime,
-                String(value.priority),
-                value.valueLevel,
-                escapeCSV(value.lifeDomain ?? ""),
-                escapeCSV(value.alignmentGuidance ?? ""),
-                String(value.alignedGoalCount),
-            ].joined(separator: ",")
-
+            // Use canonical CSV row from PersonalValueData
+            let row = value.csvRow.map { escapeCSV($0) }.joined(separator: ",")
             csv.append(row + "\n")
         }
 
@@ -140,7 +135,7 @@ public struct CSVFormatter {
     // MARK: - Terms CSV
 
     /// Encode terms to CSV format
-    public func formatTerms(_ terms: [TermExport]) throws -> Data {
+    public func formatTerms(_ terms: [TermData]) throws -> Data {
         var csv =
             "ID,TermNumber,Theme,Reflection,Status,PeriodID,PeriodTitle,StartDate,EndDate,AssignedGoals\n"
 

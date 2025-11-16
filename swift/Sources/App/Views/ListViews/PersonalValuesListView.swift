@@ -5,9 +5,10 @@ import SwiftUI
 // PersonalValuesListView.swift
 // Written by Claude Code on 2025-11-03
 // Refactored on 2025-11-13 to use ViewModel pattern
+// Refactored on 2025-11-16 to use PersonalValueData
 //
 // PURPOSE: List of personal values with priority and level display
-// DATA SOURCE: PersonalValuesListViewModel (replaces @FetchAll pattern)
+// DATA SOURCE: PersonalValuesListViewModel (returns PersonalValueData)
 // INTERACTIONS: Tap to edit, swipe to delete, empty state
 //
 // MIGRATION NOTE (2025-11-13):
@@ -18,14 +19,19 @@ import SwiftUI
 // - Easier testing and error handling
 // - Consistent pattern with GoalsListView and ActionsListView
 //
+// CANONICAL PATTERN (2025-11-16):
+// - ViewModel stores PersonalValueData (canonical type)
+// - Transform to PersonalValue at display boundary (via .asValue)
+// - Child views (RowView, FormView) still use PersonalValue
+//
 
 public struct PersonalValuesListView: View {
     @State private var viewModel = PersonalValuesListViewModel()
 
     @State private var showingAddValue = false
-    @State private var valueToEdit: PersonalValue?
-    @State private var valueToDelete: PersonalValue?
-    @State private var selectedValue: PersonalValue?  // For keyboard navigation
+    @State private var valueToEdit: PersonalValueData?
+    @State private var valueToDelete: PersonalValueData?
+    @State private var selectedValue: PersonalValueData?  // For keyboard navigation
 
     public init() {}
 
@@ -51,24 +57,26 @@ public struct PersonalValuesListView: View {
                     // PERFORMANCE: Dictionary grouping computed in ViewModel (O(n))
                     // Lookup per level is O(1)
                     // Database: Already sorted by valueLevel + priority via ORDER BY
+                    // PATTERN: Transform PersonalValueData → PersonalValue at display boundary
                     ForEach(ValueLevel.allCases, id: \.self) { level in
-                        if let levelValues = viewModel.groupedValues[level], !levelValues.isEmpty {
+                        if let levelValues = viewModel.groupedValues[level.rawValue], !levelValues.isEmpty {
                             Section(level.displayName) {
-                                ForEach(levelValues) { value in
-                                    PersonalValuesRowView(value: value)
+                                ForEach(levelValues) { valueData in
+                                    // Transform canonical type to entity for row view
+                                    PersonalValuesRowView(value: valueData.asValue)
                                         .onTapGesture {
-                                            edit(value)
+                                            edit(valueData)
                                         }
                                         .swipeActions(edge: .trailing) {
                                             Button(role: .destructive) {
-                                                valueToDelete = value
+                                                valueToDelete = valueData
                                             } label: {
                                                 Label("Delete", systemImage: "trash")
                                             }
                                         }
                                         .swipeActions(edge: .leading) {
                                             Button {
-                                                edit(value)
+                                                edit(valueData)
                                             } label: {
                                                 Label("Edit", systemImage: "pencil")
                                             }
@@ -77,7 +85,7 @@ public struct PersonalValuesListView: View {
                                         // Context menu for mouse/trackpad users
                                         .contextMenu {
                                             Button {
-                                                edit(value)
+                                                edit(valueData)
                                             } label: {
                                                 Label("Edit", systemImage: "pencil")
                                             }
@@ -85,7 +93,7 @@ public struct PersonalValuesListView: View {
                                             Divider()
 
                                             Button(role: .destructive) {
-                                                valueToDelete = value
+                                                valueToDelete = valueData
                                             } label: {
                                                 Label("Delete", systemImage: "trash")
                                             }
@@ -121,24 +129,25 @@ public struct PersonalValuesListView: View {
                 PersonalValuesFormView()
             }
         }
-        .sheet(item: $valueToEdit) { value in
+        .sheet(item: $valueToEdit) { valueData in
             NavigationStack {
-                PersonalValuesFormView(valueToEdit: value)
+                // Transform PersonalValueData to PersonalValue for form view
+                PersonalValuesFormView(valueToEdit: valueData.asValue)
             }
         }
         .alert(
             "Delete Value",
             isPresented: .constant(valueToDelete != nil),
             presenting: valueToDelete
-        ) { value in
+        ) { valueData in
             Button("Cancel", role: .cancel) {
                 valueToDelete = nil
             }
             Button("Delete", role: .destructive) {
-                delete(value)
+                delete(valueData)
             }
-        } message: { value in
-            Text("Are you sure you want to delete '\(value.title ?? "this value")'?")
+        } message: { valueData in
+            Text("Are you sure you want to delete '\(valueData.title)'?")
         }
         .alert("Error", isPresented: .constant(viewModel.hasError)) {
             Button("OK") {
@@ -151,13 +160,13 @@ public struct PersonalValuesListView: View {
 
     // MARK: - Actions
 
-    private func edit(_ value: PersonalValue) {
-        valueToEdit = value
+    private func edit(_ valueData: PersonalValueData) {
+        valueToEdit = valueData
     }
 
-    private func delete(_ value: PersonalValue) {
+    private func delete(_ valueData: PersonalValueData) {
         Task {
-            await viewModel.deleteValue(value)
+            await viewModel.deleteValue(valueData)
             valueToDelete = nil
         }
     }

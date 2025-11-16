@@ -70,9 +70,10 @@ public struct CheckDuplicateGoalTool: Tool {
         // Validate threshold
         let validThreshold = max(0.0, min(1.0, arguments.threshold))
 
-        // Fetch existing goals
+        // Fetch existing goals and transform to GoalWithDetails for compatibility
         let repository = GoalRepository(database: database)
-        let existingGoals = try await repository.fetchAll()
+        let goalDataArray = try await repository.fetchAll()
+        let existingGoals = goalDataArray.map { $0.asDetails }
 
         // Check if no existing goals
         if existingGoals.isEmpty {

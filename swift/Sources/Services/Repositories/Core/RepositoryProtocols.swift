@@ -21,14 +21,23 @@ import SQLiteData
 
 /// Base repository protocol that all repositories must conform to
 ///
-/// PATTERN: Protocol-based design allows flexibility while enforcing consistency.
-/// Each repository must provide Entity and ExportType but can choose query strategy.
+/// PATTERN: Protocol-based design with canonical data types.
+/// Repositories work with single canonical type (ActionData, GoalData, etc.) that serves
+/// both display and export needs - eliminating transformation between Entity and ExportType.
+///
+/// USAGE:
+/// ```swift
+/// class ActionRepository_v3: BaseRepository<ActionData> {
+///     // fetchAll() returns [ActionData]
+///     // fetchForExport() also returns [ActionData] (same type, just filtered)
+/// }
+/// ```
 public protocol Repository: Sendable {
-    /// The primary entity type this repository manages
-    associatedtype Entity
-
-    /// The export format for CSV/JSON serialization
-    associatedtype ExportType: Codable, Sendable
+    /// The canonical data type this repository manages
+    ///
+    /// Must be Codable (for export), Sendable (for concurrency), and Identifiable (for SwiftUI).
+    /// Examples: ActionData, GoalData, PersonalValueData, TermData
+    associatedtype DataType: Codable & Sendable & Identifiable
 
     /// Database writer instance (injected dependency)
     var database: any DatabaseWriter { get }
@@ -36,19 +45,26 @@ public protocol Repository: Sendable {
     // MARK: - Core Operations (Required)
 
     /// Fetch all entities from the database
-    func fetchAll() async throws -> [Entity]
+    /// - Returns: Array of canonical data types
+    func fetchAll() async throws -> [DataType]
 
     /// Check if an entity exists by ID
+    /// - Parameter id: The entity UUID to check
+    /// - Returns: true if entity exists
     func exists(_ id: UUID) async throws -> Bool
 
     // MARK: - Export Operations (Required)
 
-    /// Fetch entities in denormalized export format
+    /// Fetch entities with optional date filtering (for export)
+    ///
+    /// Returns the SAME type as fetchAll(), just filtered by date range.
+    /// Since DataType is already Codable, no transformation needed for export.
+    ///
     /// - Parameters:
-    ///   - from: Optional start date for filtering
-    ///   - to: Optional end date for filtering
-    /// - Returns: Array of export-ready entities
-    func fetchForExport(from: Date?, to: Date?) async throws -> [ExportType]
+    ///   - from: Optional start date for filtering (inclusive)
+    ///   - to: Optional end date for filtering (inclusive)
+    /// - Returns: Array of canonical data types (export-ready)
+    func fetchForExport(from: Date?, to: Date?) async throws -> [DataType]
 
     // MARK: - Error Mapping (Required)
 
@@ -76,8 +92,8 @@ public protocol TitleBasedRepository: Repository {
 public protocol DateFilterableRepository: Repository {
     /// Fetch entities within a date range
     /// - Parameter range: The date range to filter by
-    /// - Returns: Entities that fall within the date range
-    func fetchByDateRange(_ range: ClosedRange<Date>) async throws -> [Entity]
+    /// - Returns: Canonical data types that fall within the date range
+    func fetchByDateRange(_ range: ClosedRange<Date>) async throws -> [DataType]
 }
 
 /// Repository that supports fetching entities by related entity
@@ -89,8 +105,8 @@ public protocol RelationshipRepository: Repository {
 
     /// Fetch entities related to a specific entity ID
     /// - Parameter id: The ID of the related entity
-    /// - Returns: Entities related to the given ID
-    func fetchByRelated(_ id: UUID) async throws -> [Entity]
+    /// - Returns: Canonical data types related to the given ID
+    func fetchByRelated(_ id: UUID) async throws -> [DataType]
 }
 
 // MARK: - Advanced Capability Protocols
@@ -206,7 +222,7 @@ public extension TitleBasedRepository {
 /// Default implementations for date filterable repositories
 public extension DateFilterableRepository {
     /// Fetch entities from the last N days
-    func fetchRecent(days: Int) async throws -> [Entity] {
+    func fetchRecent(days: Int) async throws -> [DataType] {
         let endDate = Date()
         guard let startDate = Calendar.current.date(byAdding: .day, value: -days, to: endDate) else {
             return []
@@ -215,7 +231,7 @@ public extension DateFilterableRepository {
     }
 
     /// Fetch entities from a specific month
-    func fetchByMonth(year: Int, month: Int) async throws -> [Entity] {
+    func fetchByMonth(year: Int, month: Int) async throws -> [DataType] {
         var components = DateComponents()
         components.year = year
         components.month = month

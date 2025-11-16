@@ -24,43 +24,28 @@ import Models
 import SQLiteData
 import GRDB  // For FetchableRecord protocol (minimal usage)
 
-// MARK: - Export Data Types
-
-/// Flat, denormalized export structure for CSV/JSON serialization
-///
-/// EXPORT PATTERN: Single-level structure optimized for external formats
-/// - All expectation fields inlined (no nested objects)
-/// - Arrays flattened to simple value types
-/// - Sendable + Codable for safe async/await and serialization
-public struct GoalExport: Identifiable, Codable, Sendable {
-    // Identity
-    public let id: UUID
-
-    // Goal-specific fields
-    public let startDate: Date?
-    public let targetDate: Date?
-    public let actionPlan: String?
-    public let expectedTermLength: Int?
-
-    // Expectation fields (inlined)
-    public let title: String?
-    public let detailedDescription: String?
-    public let freeformNotes: String?
-    public let expectationImportance: Int
-    public let expectationUrgency: Int
-    public let logTime: Date
-
-    // Related entities (flattened)
-    public let measureTargets: [MeasureTargetExport]
-    public let alignedValueIds: [UUID]
+// TEMPORARY STUB: GoalExport is deprecated - use GoalData instead
+// This stub exists only to allow compilation of deprecated code that will be removed
+private struct GoalExport: Identifiable, Codable, Sendable {
+    let id: UUID
+    let startDate: Date?
+    let targetDate: Date?
+    let actionPlan: String?
+    let expectedTermLength: Int?
+    let title: String?
+    let detailedDescription: String?
+    let freeformNotes: String?
+    let expectationImportance: Int
+    let expectationUrgency: Int
+    let logTime: Date
+    let measureTargets: [MeasureTargetExport]
+    let alignedValueIds: [UUID]
 }
-
-/// Simple measure target for export (flat structure, no nesting)
-public struct MeasureTargetExport: Codable, Sendable {
-    public let measureId: UUID
-    public let measureTitle: String?
-    public let unit: String
-    public let targetValue: Double
+private struct MeasureTargetExport: Codable, Sendable {
+    let measureId: UUID
+    let measureTitle: String?
+    let unit: String
+    let targetValue: Double
 }
 
 // REMOVED @MainActor: Repository performs database queries which are I/O
@@ -75,13 +60,145 @@ public final class GoalRepository: Sendable {
 
     // MARK: - Read Operations
 
-    /// Fetch all goals with full relationship graph
+    /// Fetch all goals with full relationship graph (LEGACY - use fetchAll() instead)
     ///
     /// Uses JSON aggregation: 1 query regardless of goal count
-    public func fetchAll() async throws -> [GoalWithDetails] {
+    /// - Warning: Deprecated. Use fetchAll() which returns canonical GoalData
+    @available(*, deprecated, renamed: "fetchAll", message: "Use fetchAll() which returns canonical GoalData. Transform with .asDetails if needed.")
+    public func fetchAllLegacy() async throws -> [GoalWithDetails] {
         do {
             return try await database.read { db in
                 try FetchAllGoalsRequest().fetch(db)
+            }
+        } catch {
+            throw mapDatabaseError(error)
+        }
+    }
+
+    /// Fetch all goals as canonical GoalData (for both display and export)
+    ///
+    /// **CANONICAL PATTERN**: Returns GoalData that's already Codable
+    /// **Usage**:
+    /// - Export: Use directly (already Codable)
+    /// - Display: Transform with `.map { $0.asDetails }` if needed
+    /// - Simple views: Use GoalData directly without transformation
+    ///
+    /// - Parameters:
+    ///   - startDate: Optional filter for goals created or active after this date
+    ///   - endDate: Optional filter for goals created or active before this date
+    public func fetchAll(
+        from startDate: Date? = nil,
+        to endDate: Date? = nil
+    ) async throws -> [GoalData] {
+        do {
+            return try await database.read { db in
+                // If no date filtering, use existing FetchAllGoalsRequest
+                if startDate == nil && endDate == nil {
+                    // Use same FetchAllGoalsRequest but transform to GoalData
+                    let goalDetailsArray = try FetchAllGoalsRequest().fetch(db)
+
+                    // Transform GoalWithDetails to GoalData
+                    return goalDetailsArray.map { goalWithDetails in
+                    GoalData(
+                        id: goalWithDetails.goal.id,
+                        startDate: goalWithDetails.goal.startDate,
+                        targetDate: goalWithDetails.goal.targetDate,
+                        actionPlan: goalWithDetails.goal.actionPlan,
+                        expectedTermLength: goalWithDetails.goal.expectedTermLength,
+                        expectationId: goalWithDetails.expectation.id,
+                        title: goalWithDetails.expectation.title,
+                        detailedDescription: goalWithDetails.expectation.detailedDescription,
+                        freeformNotes: goalWithDetails.expectation.freeformNotes,
+                        expectationImportance: goalWithDetails.expectation.expectationImportance,
+                        expectationUrgency: goalWithDetails.expectation.expectationUrgency,
+                        logTime: goalWithDetails.expectation.logTime,
+                        measureTargets: goalWithDetails.metricTargets.map { target in
+                            GoalData.MeasureTarget(
+                                id: target.expectationMeasure.id,
+                                measureId: target.measure.id,
+                                measureTitle: target.measure.title,
+                                measureUnit: target.measure.unit,
+                                measureType: target.measure.measureType,
+                                targetValue: target.expectationMeasure.targetValue,
+                                freeformNotes: target.expectationMeasure.freeformNotes,
+                                createdAt: target.expectationMeasure.createdAt
+                            )
+                        },
+                        valueAlignments: goalWithDetails.valueAlignments.map { alignment in
+                            GoalData.ValueAlignment(
+                                id: alignment.goalRelevance.id,
+                                valueId: alignment.value.id,
+                                valueTitle: alignment.value.title ?? "",
+                                alignmentStrength: alignment.goalRelevance.alignmentStrength,
+                                relevanceNotes: alignment.goalRelevance.relevanceNotes,
+                                createdAt: alignment.goalRelevance.createdAt
+                            )
+                        },
+                        termAssignment: goalWithDetails.termAssignment.map { assignment in
+                            GoalData.TermAssignment(
+                                id: assignment.id,
+                                termId: assignment.termId,
+                                assignmentOrder: assignment.assignmentOrder,
+                                createdAt: assignment.createdAt
+                            )
+                        }
+                    )
+                    }
+                } else {
+                    // With date filtering, use FetchFilteredGoalsRequest
+                    let goalDetailsArray = try FetchFilteredGoalsRequest(
+                        startDate: startDate,
+                        endDate: endDate
+                    ).fetch(db)
+
+                    // Transform GoalWithDetails to GoalData
+                    return goalDetailsArray.map { goalWithDetails in
+                        GoalData(
+                            id: goalWithDetails.goal.id,
+                            startDate: goalWithDetails.goal.startDate,
+                            targetDate: goalWithDetails.goal.targetDate,
+                            actionPlan: goalWithDetails.goal.actionPlan,
+                            expectedTermLength: goalWithDetails.goal.expectedTermLength,
+                            expectationId: goalWithDetails.expectation.id,
+                            title: goalWithDetails.expectation.title,
+                            detailedDescription: goalWithDetails.expectation.detailedDescription,
+                            freeformNotes: goalWithDetails.expectation.freeformNotes,
+                            expectationImportance: goalWithDetails.expectation.expectationImportance,
+                            expectationUrgency: goalWithDetails.expectation.expectationUrgency,
+                            logTime: goalWithDetails.expectation.logTime,
+                            measureTargets: goalWithDetails.metricTargets.map { target in
+                                GoalData.MeasureTarget(
+                                    id: target.expectationMeasure.id,
+                                    measureId: target.measure.id,
+                                    measureTitle: target.measure.title,
+                                    measureUnit: target.measure.unit,
+                                    measureType: target.measure.measureType,
+                                    targetValue: target.expectationMeasure.targetValue,
+                                    freeformNotes: target.expectationMeasure.freeformNotes,
+                                    createdAt: target.expectationMeasure.createdAt
+                                )
+                            },
+                            valueAlignments: goalWithDetails.valueAlignments.map { alignment in
+                                GoalData.ValueAlignment(
+                                    id: alignment.goalRelevance.id,
+                                    valueId: alignment.value.id,
+                                    valueTitle: alignment.value.title ?? "",
+                                    alignmentStrength: alignment.goalRelevance.alignmentStrength,
+                                    relevanceNotes: alignment.goalRelevance.relevanceNotes,
+                                    createdAt: alignment.goalRelevance.createdAt
+                                )
+                            },
+                            termAssignment: goalWithDetails.termAssignment.map { assignment in
+                                GoalData.TermAssignment(
+                                    id: assignment.id,
+                                    termId: assignment.termId,
+                                    assignmentOrder: assignment.assignmentOrder,
+                                    createdAt: assignment.createdAt
+                                )
+                            }
+                        )
+                    }
+                }
             }
         } catch {
             throw mapDatabaseError(error)
@@ -148,28 +265,6 @@ public final class GoalRepository: Sendable {
         }
     }
 
-    // MARK: - Export Operations
-
-    /// Fetch goals in denormalized export format for CSV/JSON serialization
-    ///
-    /// EXPORT PATTERN: Reuses JSON aggregation infrastructure but transforms to flat structure.
-    /// - Date filtering on targetDate (falls back to startDate if targetDate is null)
-    /// - Flattened structure optimized for external formats
-    /// - Arrays of simple value types (no nested objects)
-    ///
-    /// - Parameters:
-    ///   - startDate: Optional start of date range (inclusive)
-    ///   - endDate: Optional end of date range (inclusive)
-    /// - Returns: Array of denormalized GoalExport structs
-    public func fetchForExport(from startDate: Date? = nil, to endDate: Date? = nil) async throws -> [GoalExport] {
-        do {
-            return try await database.read { db in
-                try FetchGoalsForExportRequest(startDate: startDate, endDate: endDate).fetch(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
-        }
-    }
 
     // MARK: - Dashboard Queries
 
@@ -499,6 +594,118 @@ public func assembleGoalWithDetails(from row: GoalQueryRow) throws -> GoalWithDe
     )
 }
 
+/// Assemble GoalData from JSON query row (canonical data type)
+///
+/// **NEW PATTERN**: Single assembly function for both display and export
+/// **Replaces**: assembleGoalWithDetails() and assembleGoalExport()
+/// **Process**:
+/// 1. Parse JSON strings to structured arrays
+/// 2. Convert to GoalData sub-structs (flat, not nested entities)
+/// 3. Return canonical GoalData that's already Codable
+///
+/// Consumer decides how to use it:
+/// - Export: Use directly (Codable)
+/// - Views: Call .asDetails if nested structure needed
+public func assembleGoalData(from row: GoalQueryRow) throws -> GoalData {
+    let decoder = JSONDecoder()
+
+    // Parse goal and expectation IDs
+    guard let goalUUID = UUID(uuidString: row.goalId) else {
+        throw ValidationError.databaseConstraint("Invalid goal ID: \(row.goalId)")
+    }
+
+    guard let expectationUUID = UUID(uuidString: row.expectationId) else {
+        throw ValidationError.databaseConstraint("Invalid expectation ID: \(row.expectationId)")
+    }
+
+    // Parse measures JSON
+    let measuresData = row.measuresJson.data(using: .utf8)!
+    let measuresJson = try decoder.decode([MeasureJsonRow].self, from: measuresData)
+
+    let measureTargets: [GoalData.MeasureTarget] = try measuresJson.map { m in
+        guard let measureTargetUUID = UUID(uuidString: m.expectationMeasureId),
+              let measureUUID = UUID(uuidString: m.measureId) else {
+            throw ValidationError.databaseConstraint("Invalid UUID in measure for goal \(row.goalId)")
+        }
+
+        return GoalData.MeasureTarget(
+            id: measureTargetUUID,
+            measureId: measureUUID,
+            measureTitle: m.measureTitle,
+            measureUnit: m.measureUnit,
+            measureType: m.measureType,
+            targetValue: m.targetValue,
+            freeformNotes: m.expectationMeasureFreeformNotes,
+            createdAt: m.expectationMeasureCreatedAt
+        )
+    }
+
+    // Parse values JSON
+    let valuesData = row.valuesJson.data(using: .utf8)!
+    let valuesJson = try decoder.decode([ValueJsonRow].self, from: valuesData)
+
+    let valueAlignments: [GoalData.ValueAlignment] = try valuesJson.map { v in
+        guard let relevanceUUID = UUID(uuidString: v.relevanceId),
+              let valueUUID = UUID(uuidString: v.valueId) else {
+            throw ValidationError.databaseConstraint("Invalid UUID in value for goal \(row.goalId)")
+        }
+
+        return GoalData.ValueAlignment(
+            id: relevanceUUID,
+            valueId: valueUUID,
+            valueTitle: v.valueTitle,
+            alignmentStrength: v.alignmentStrength,
+            relevanceNotes: v.relevanceNotes,
+            createdAt: v.relevanceCreatedAt
+        )
+    }
+
+    // Parse term assignment JSON (optional single object)
+    var termAssignment: GoalData.TermAssignment?
+    if let termJson = row.termAssignmentJson,
+       !termJson.isEmpty,
+       termJson != "null",
+       let termData = termJson.data(using: .utf8) {
+        do {
+            let termJsonRow = try decoder.decode(TermAssignmentJsonRow.self, from: termData)
+
+            guard let assignmentUUID = UUID(uuidString: termJsonRow.assignmentId),
+                  let termUUID = UUID(uuidString: termJsonRow.termId) else {
+                throw ValidationError.databaseConstraint("Invalid UUID in term assignment for goal \(row.goalId)")
+            }
+
+            termAssignment = GoalData.TermAssignment(
+                id: assignmentUUID,
+                termId: termUUID,
+                assignmentOrder: termJsonRow.assignmentOrder,
+                createdAt: termJsonRow.createdAt
+            )
+        } catch {
+            // Term assignment is optional, log but don't fail
+            print("Warning: Failed to parse term assignment for goal \(row.goalId): \(error)")
+        }
+    }
+
+    // Build canonical GoalData with flattened structure
+    return GoalData(
+        id: goalUUID,
+        startDate: row.goalStartDate,
+        targetDate: row.goalTargetDate,
+        actionPlan: row.goalActionPlan,
+        expectedTermLength: row.goalExpectedTermLength,
+        expectationId: expectationUUID,
+        title: row.expectationTitle,
+        detailedDescription: row.expectationDetailedDescription,
+        freeformNotes: row.expectationFreeformNotes,
+        expectationImportance: row.expectationImportance,
+        expectationUrgency: row.expectationUrgency,
+        logTime: row.expectationLogTime,
+        measureTargets: measureTargets,
+        valueAlignments: valueAlignments,
+        termAssignment: termAssignment
+    )
+}
+
 // MARK: - Fetch Requests
 
 /// Fetch all goals with full relationship graph using JSON aggregation
@@ -672,6 +879,135 @@ private struct FetchActiveGoalsRequest: FetchKeyRequest {
         """
 
         let rows = try GoalQueryRow.fetchAll(db, sql: sql)
+
+        return try rows.map { row in
+            try assembleGoalWithDetails(from: row)
+        }
+    }
+}
+
+/// Fetch goals filtered by date range using JSON aggregation
+private struct FetchFilteredGoalsRequest: FetchKeyRequest {
+    typealias Value = [GoalWithDetails]
+    let startDate: Date?
+    let endDate: Date?
+
+    func fetch(_ db: Database) throws -> [GoalWithDetails] {
+        // Build WHERE clause conditions
+        var whereConditions: [String] = []
+        var bindings: [DatabaseValueConvertible] = []
+
+        if let start = startDate {
+            // Include goals that started after or were logged after the start date
+            whereConditions.append("(g.startDate >= ? OR e.logTime >= ?)")
+            bindings.append(start)
+            bindings.append(start)
+        }
+
+        if let end = endDate {
+            // Include goals that target before or were logged before the end date
+            whereConditions.append("(g.targetDate <= ? OR e.logTime <= ?)")
+            bindings.append(end)
+            bindings.append(end)
+        }
+
+        let whereClause = whereConditions.isEmpty ? "" : "WHERE " + whereConditions.joined(separator: " AND ")
+
+        let sql = """
+        SELECT
+            -- Goal fields
+            g.id as goalId,
+            g.startDate as goalStartDate,
+            g.targetDate as goalTargetDate,
+            g.actionPlan as goalActionPlan,
+            g.expectedTermLength as goalExpectedTermLength,
+
+            -- Expectation fields
+            e.id as expectationId,
+            e.title as expectationTitle,
+            e.detailedDescription as expectationDetailedDescription,
+            e.freeformNotes as expectationFreeformNotes,
+            e.logTime as expectationLogTime,
+            e.expectationImportance,
+            e.expectationUrgency,
+
+            -- Measures as JSON array
+            COALESCE(
+                (
+                    SELECT json_group_array(
+                        json_object(
+                            'expectationMeasureId', em.id,
+                            'targetValue', em.targetValue,
+                            'expectationMeasureFreeformNotes', em.freeformNotes,
+                            'measureId', m.id,
+                            'measureTitle', m.title,
+                            'measureUnit', m.unit,
+                            'measureType', m.measureType,
+                            'measureDetailedDescription', m.detailedDescription,
+                            'measureFreeformNotes', m.freeformNotes,
+                            'measureLogTime', m.logTime,
+                            'measureCanonicalUnit', m.canonicalUnit,
+                            'measureConversionFactor', m.conversionFactor,
+                            'expectationMeasureCreatedAt', em.createdAt
+                        )
+                    )
+                    FROM expectationMeasures em
+                    JOIN measures m ON em.measureId = m.id
+                    WHERE em.expectationId = e.id
+                ),
+                '[]'
+            ) as measuresJson,
+
+            -- Values as JSON array
+            COALESCE(
+                (
+                    SELECT json_group_array(
+                        json_object(
+                            'relevanceId', gr.id,
+                            'alignmentStrength', gr.alignmentStrength,
+                            'relevanceNotes', gr.relevanceNotes,
+                            'valueId', v.id,
+                            'valueTitle', v.title,
+                            'valueDetailedDescription', v.detailedDescription,
+                            'valueFreeformNotes', v.freeformNotes,
+                            'valuePriority', v.priority,
+                            'valueLevel', v.valueLevel,
+                            'valueLifeDomain', v.lifeDomain,
+                            'valueAlignmentGuidance', v.alignmentGuidance,
+                            'valueLogTime', v.logTime,
+                            'relevanceCreatedAt', gr.createdAt
+                        )
+                    )
+                    FROM goalRelevances gr
+                    JOIN personalValues v ON gr.valueId = v.id
+                    WHERE gr.goalId = g.id
+                ),
+                '[]'
+            ) as valuesJson,
+
+            -- Term assignment as JSON (single object)
+            (
+                SELECT json_object(
+                    'assignmentId', tga.id,
+                    'termId', tga.termId,
+                    'assignmentOrder', tga.assignmentOrder,
+                    'createdAt', tga.createdAt
+                )
+                FROM termGoalAssignments tga
+                WHERE tga.goalId = g.id
+                ORDER BY tga.createdAt DESC
+                LIMIT 1
+            ) as termAssignmentJson
+
+        FROM goals g
+        JOIN expectations e ON g.expectationId = e.id
+        \(whereClause)
+        ORDER BY e.expectationImportance DESC, e.expectationUrgency DESC
+        """
+
+        // Execute with bindings
+        let statement = try db.cachedStatement(sql: sql)
+        let rows = try GoalQueryRow.fetchAll(statement, arguments: StatementArguments(bindings))
 
         return try rows.map { row in
             try assembleGoalWithDetails(from: row)

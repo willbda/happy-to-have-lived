@@ -14,7 +14,7 @@
 | 0.5.0 | 2025-10-25 | Foundation complete, rearchitecture needed | SQLiteData working, protocols defined, but needs structural rethink |
 | 0.6.0 | 2025-11-08 | Coordinator pattern complete | Phases 1-3 done: 3NF schema, models migrated, all 4 coordinators with full CRUD |
 | **0.6.5** | **2025-11-13** | **Repository + ViewModel complete** | All 4 entities migrated to @Observable pattern, repositories with Sendable, query wrappers eliminated |
-| **0.7.0** | **TBD** | **Testing + refinement** | Manual/automated testing, CSV enhancements, performance optimizations, bug fixes |
+| **0.7.0** | **TBD** | **Testing + refinement** | Manual/automated testing, CSV enhancements, performance optimizations, bug fixes, **schema cleanup** ([#17](https://github.com/willbda/happy-to-have-lived/issues/17)) |
 | **0.7.5** | **TBD** | **Semantic foundation + basic LLM** | Unified semantic layer for deduplication/search/LLM, conversational goal setting |
 
 ## Current Implementation Focus
@@ -160,6 +160,35 @@ CREATE INDEX idx_personal_values_title_lower ON personalValues(LOWER(title));
 - Fits naturally with "testing + refinement" phase
 
 **Note:** Core data flow (repositories with JSON aggregation) already excellent - these fixes target import workflows only.
+
+### v0.7.0 Schema Cleanup
+
+**Goal:** Finalize schema design before v1.0.0 public launch
+
+**Identified Issue:**
+- `actionGoalContributions` table has unused fields (`contributionAmount`, `measureId`)
+- 193 records in production database, **all have NULL values** for these fields
+- Auto-matching pattern (JOIN on measure type) handles multi-goal scenarios elegantly
+- No proven use case for fine-grained contribution splitting in 200+ real-world actions
+
+**Proposed Solution:**
+Remove unused fields to simplify schema (see [Issue #17](https://github.com/willbda/happy-to-have-lived/issues/17))
+
+**Rationale:**
+1. Current auto-match pattern is more robust than per-contribution overrides
+2. Measure transformation is semantic (record multiple measures), not structural
+3. YAGNI principle - don't build for hypothetical needs
+4. Can re-add fields later if genuine use case emerges (backwards compatible)
+
+**Impact:**
+- Schema migration (DROP COLUMN)
+- Update Swift model (remove properties)
+- Simplify coordinator initialization
+- No data loss (fields already NULL)
+
+**Timeline:** 1-2 hours
+
+**Decision Deadline:** Before v1.0.0 (schema changes post-launch become migration burden)
 
 - First stable release
 - **Criteria for 1.0:**

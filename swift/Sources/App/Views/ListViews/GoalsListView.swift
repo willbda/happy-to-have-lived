@@ -28,8 +28,8 @@ public struct GoalsListView: View {
     @State private var viewModel = GoalsListViewModel()
 
     @State private var showingAddGoal = false
-    @State private var goalToEdit: GoalWithDetails?
-    @State private var goalToDelete: GoalWithDetails?
+    @State private var goalToEdit: GoalData?
+    @State private var goalToDelete: GoalData?
     @State private var showingDeleteAlert = false
     @State private var showingGoalCoach = false
 
@@ -55,14 +55,14 @@ public struct GoalsListView: View {
             } else {
                 // Goal list
                 List {
-                    ForEach(viewModel.goals) { goalDetails in
-                        GoalRowView(goalDetails: goalDetails)
+                    ForEach(viewModel.goals) { goalData in
+                        GoalRowView(goalDetails: goalData.asDetails)
                             .onTapGesture {
-                                goalToEdit = goalDetails
+                                goalToEdit = goalData
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    goalToDelete = goalDetails
+                                    goalToDelete = goalData
                                     showingDeleteAlert = true
                                 } label: {
                                     Label("Delete", systemImage: "trash")
@@ -70,7 +70,7 @@ public struct GoalsListView: View {
                             }
                             .swipeActions(edge: .leading) {
                                 Button {
-                                    goalToEdit = goalDetails
+                                    goalToEdit = goalData
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
@@ -114,20 +114,20 @@ public struct GoalsListView: View {
                 GoalFormView()
             }
         }
-        .sheet(item: $goalToEdit) { goalDetails in
+        .sheet(item: $goalToEdit) { goalData in
             NavigationStack {
-                GoalFormView(goalToEdit: goalDetails)
+                GoalFormView(goalToEdit: goalData.asDetails)
             }
         }
-        .alert("Delete Goal?", isPresented: $showingDeleteAlert, presenting: goalToDelete) { goalDetails in
+        .alert("Delete Goal?", isPresented: $showingDeleteAlert, presenting: goalToDelete) { goalData in
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 Task {
-                    await viewModel.deleteGoal(goalDetails)
+                    await viewModel.deleteGoal(goalData)
                 }
             }
-        } message: { goalDetails in
-            Text("Are you sure you want to delete \"\(goalDetails.expectation.title ?? "this goal")\"?")
+        } message: { goalData in
+            Text("Are you sure you want to delete \"\(goalData.title ?? "this goal")\"?")
         }
         .alert("Error", isPresented: .constant(viewModel.hasError)) {
             Button("OK") {

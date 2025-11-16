@@ -20,21 +20,28 @@ import GRDB
 
 /// Base repository implementation providing common functionality
 ///
-/// PATTERN: Template Method pattern - provides structure with overridable operations.
-/// Subclasses must implement abstract methods but inherit shared infrastructure.
+/// PATTERN: Template Method pattern with canonical data types.
+/// Subclasses inherit error mapping, database wrappers, and utilities.
+/// Works with single canonical type (ActionData, GoalData, etc.) for both display and export.
 ///
 /// USAGE:
 /// ```swift
-/// final class PersonalValueRepository: BaseRepository<PersonalValue, PersonalValueExport> {
-///     override func fetchAll() async throws -> [PersonalValue] {
+/// final class ActionRepository_v3: BaseRepository<ActionData> {
+///     override func fetchAll() async throws -> [ActionData] {
 ///         try await read { db in
-///             // Query implementation
+///             // Query returning ActionData
 ///         }
+///     }
+///
+///     override func fetchForExport(from: Date?, to: Date?) async throws -> [ActionData] {
+///         // Same type as fetchAll, just add date filtering
+///         let filter = DateFilter(startDate: from, endDate: to)
+///         // ... query with filter
 ///     }
 /// }
 /// ```
-open class BaseRepository<Entity, ExportType>: Repository
-    where ExportType: Codable & Sendable
+open class BaseRepository<DataType>: Repository
+    where DataType: Codable & Sendable & Identifiable
 {
     // MARK: - Properties
 
@@ -56,13 +63,13 @@ open class BaseRepository<Entity, ExportType>: Repository
     /// Subclasses MUST override this method with entity-specific query logic.
     /// Use the `read` wrapper for automatic error mapping:
     /// ```swift
-    /// override func fetchAll() async throws -> [Entity] {
+    /// override func fetchAll() async throws -> [DataType] {
     ///     try await read { db in
-    ///         // Your query here
+    ///         // Your query here returning [ActionData], [GoalData], etc.
     ///     }
     /// }
     /// ```
-    open func fetchAll() async throws -> [Entity] {
+    open func fetchAll() async throws -> [DataType] {
         fatalError("\(type(of: self)).fetchAll() must be overridden")
     }
 
@@ -73,10 +80,21 @@ open class BaseRepository<Entity, ExportType>: Repository
         fatalError("\(type(of: self)).exists(_:) must be overridden")
     }
 
-    /// Fetch entities in denormalized export format
+    /// Fetch entities with optional date filtering (for export)
     ///
-    /// Subclasses MUST override this method with export-specific logic.
-    open func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [ExportType] {
+    /// Returns the SAME type as fetchAll(), just filtered by date range.
+    /// Subclasses typically implement this as fetchAll() + WHERE clause.
+    ///
+    /// ```swift
+    /// override func fetchForExport(from: Date?, to: Date?) async throws -> [DataType] {
+    ///     let filter = DateFilter(startDate: from, endDate: to)
+    ///     let (whereClause, args) = filter.buildWhereClause(dateColumn: "logTime")
+    ///     try await read { db in
+    ///         // Same query as fetchAll() + whereClause
+    ///     }
+    /// }
+    /// ```
+    open func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [DataType] {
         fatalError("\(type(of: self)).fetchForExport(from:to:) must be overridden")
     }
 

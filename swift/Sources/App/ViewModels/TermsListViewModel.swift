@@ -57,8 +57,8 @@ public final class TermsListViewModel {
 
     // MARK: - Observable State (internal visibility)
 
-    /// Terms data for display
-    var termsWithPeriods: [TermWithPeriod] = []
+    /// Terms data for display (canonical type)
+    var terms: [TermData] = []
 
     /// Loading state for UI feedback
     var isLoading: Bool = false
@@ -75,7 +75,7 @@ public final class TermsListViewModel {
 
     /// Calculate next term number from existing terms
     var nextTermNumber: Int {
-        let maxTermNumber = termsWithPeriods.map { $0.term.termNumber }.max() ?? 0
+        let maxTermNumber = terms.map { $0.termNumber }.max() ?? 0
         return maxTermNumber + 1
     }
 
@@ -109,7 +109,7 @@ public final class TermsListViewModel {
         errorMessage = nil
 
         do {
-            termsWithPeriods = try await repository.fetchAll()
+            terms = try await repository.fetchAll()
         } catch let error as ValidationError {
             // User-friendly validation messages
             errorMessage = error.userMessage
@@ -125,20 +125,24 @@ public final class TermsListViewModel {
 
     /// Delete a term and reload the list
     ///
-    /// - Parameters:
-    ///   - timePeriod: The time period to delete
-    ///   - goalTerm: The goal term to delete
+    /// - Parameter termData: The term data to delete
     ///
     /// **Implementation**: Uses TimePeriodCoordinator for atomic delete
     /// **Side Effects**: Reloads terms list after successful deletion
-    public func deleteTerm(timePeriod: TimePeriod, goalTerm: GoalTerm) async {
+    public func deleteTerm(_ termData: TermData) async {
         isLoading = true
         errorMessage = nil
 
         do {
+            // Transform TermData to entities for coordinator
+            let termWithPeriod = termData.asWithPeriod
+
             // Use coordinator for atomic delete
             let coordinator = TimePeriodCoordinator(database: database)
-            try await coordinator.delete(timePeriod: timePeriod, goalTerm: goalTerm)
+            try await coordinator.delete(
+                timePeriod: termWithPeriod.timePeriod,
+                goalTerm: termWithPeriod.term
+            )
 
             // Reload list after successful delete
             await loadTerms()

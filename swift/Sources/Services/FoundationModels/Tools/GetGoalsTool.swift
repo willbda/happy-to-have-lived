@@ -74,8 +74,9 @@ public struct GetGoalsTool: Tool {
             // Fetch goals for specific term
             goals = try await repository.fetchByTerm(termUUID)
         } else {
-            // Fetch all goals
-            goals = try await repository.fetchAll()
+            // Fetch all goals and transform to GoalWithDetails for compatibility
+            let goalDataArray = try await repository.fetchAll()
+            goals = goalDataArray.map { $0.asDetails }
         }
 
         // Apply status filter if provided

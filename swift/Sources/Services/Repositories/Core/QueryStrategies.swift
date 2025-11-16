@@ -22,24 +22,29 @@ import GRDB
 /// Strategy for repositories using JSON aggregation for complex relationships
 ///
 /// PATTERN: Single-query strategy using SQLite's json_group_array() to fetch
-/// entities with all their relationships in one database round-trip.
+/// canonical data types with all their relationships in one database round-trip.
 ///
-/// USAGE: GoalRepository (goals + measures + relevances),
-///        ActionRepository (actions + measurements + contributions)
+/// USAGE: ActionRepository (returns ActionData),
+///        GoalRepository (returns GoalData)
 ///
 /// EXAMPLE:
 /// ```swift
-/// protocol GoalJSONStrategy: JSONAggregationStrategy {
-///     typealias QueryRow = GoalQueryRow
-///     typealias AssembledEntity = GoalWithDetails
+/// final class ActionRepository_v3: BaseRepository<ActionData>, JSONAggregationStrategy {
+///     typealias QueryRow = ActionQueryRow
+///
+///     var baseQuerySQL: String { "SELECT ..." }
+///
+///     func assembleData(from row: QueryRow) throws -> ActionData {
+///         // Parse JSON and return ActionData
+///     }
 /// }
 /// ```
 public protocol JSONAggregationStrategy {
+    /// The canonical data type being assembled (ActionData, GoalData, etc.)
+    associatedtype DataType: Codable & Sendable
+
     /// The row type returned by the JSON aggregation query
     associatedtype QueryRow: Decodable, FetchableRecord, Sendable
-
-    /// The assembled entity type with all relationships
-    associatedtype AssembledEntity
 
     /// Base SQL query with JSON aggregation columns
     ///
@@ -57,17 +62,22 @@ public protocol JSONAggregationStrategy {
     /// ```
     var baseQuerySQL: String { get }
 
-    /// Assemble the final entity from the query row
+    /// Assemble canonical data type from the query row
     ///
-    /// Parses JSON columns and constructs domain models:
+    /// Parses JSON columns and constructs the canonical data type:
     /// ```swift
-    /// func assembleEntity(from row: QueryRow) throws -> AssembledEntity {
-    ///     let relatedData = row.relatedJson.data(using: .utf8)!
-    ///     let related = try JSONDecoder().decode([Related].self, from: relatedData)
-    ///     return AssembledEntity(entity: entity, related: related)
+    /// func assembleData(from row: QueryRow) throws -> DataType {
+    ///     // Parse JSON arrays from row
+    ///     let measurements = try JSONAggregationHelper.decodeJSONArray(
+    ///         row.measurementsJson,
+    ///         as: MeasurementJsonRow.self,
+    ///         context: "measurements"
+    ///     )
+    ///     // Return canonical data type (ActionData, GoalData, etc.)
+    ///     return DataType(...)
     /// }
     /// ```
-    func assembleEntity(from row: QueryRow) throws -> AssembledEntity
+    func assembleData(from row: QueryRow) throws -> DataType
 }
 
 /// Helper utilities for JSON aggregation strategy
@@ -136,30 +146,24 @@ public struct JSONAggregationHelper {
 /// Strategy for repositories using SQLiteData's #sql macro
 ///
 /// PATTERN: Direct SQL queries with compile-time type safety.
-/// Best for simple queries without complex relationships.
+/// Best for simple canonical data types without complex nested relationships.
 ///
-/// USAGE: PersonalValueRepository (simple entity with minimal JOINs)
+/// USAGE: PersonalValueRepository (returns PersonalValueData)
 ///
 /// EXAMPLE:
 /// ```swift
-/// extension PersonalValueRepository: SQLMacroStrategy {
-///     func fetchAll() async throws -> [PersonalValue] {
+/// final class PersonalValueRepository_v3: BaseRepository<PersonalValueData>, SQLMacroStrategy {
+///     override func fetchAll() async throws -> [PersonalValueData] {
 ///         try await read { db in
-///             try #sql(
-///                 """
-///                 SELECT \(PersonalValue.columns)
-///                 FROM \(PersonalValue.self)
-///                 ORDER BY \(PersonalValue.priority) DESC
-///                 """,
-///                 as: PersonalValue.self
-///             ).fetchAll(db)
+///             // Query returns PersonalValueData directly
+///             // Or query PersonalValue and transform to PersonalValueData
 ///         }
 ///     }
 /// }
 /// ```
 public protocol SQLMacroStrategy {
-    /// The entity type being queried
-    associatedtype Entity
+    /// The canonical data type being queried (PersonalValueData, etc.)
+    associatedtype DataType: Codable & Sendable
 
     // No additional requirements - repositories using this strategy
     // implement queries directly with #sql macro

@@ -29,17 +29,17 @@ public struct TermsListView: View {
     @State private var termToEdit: (timePeriod: TimePeriod, goalTerm: GoalTerm)?
 
     /// Selected term for keyboard navigation
-    @State private var selectedTerm: TermWithPeriod?
+    @State private var selectedTerm: TermData?
 
     /// Term to delete (for confirmation)
-    @State private var termToDelete: TermWithPeriod?
+    @State private var termToDelete: TermData?
 
     public var body: some View {
         Group {
             if viewModel.isLoading {
                 // Loading state
                 ProgressView("Loading terms...")
-            } else if viewModel.termsWithPeriods.isEmpty {
+            } else if viewModel.terms.isEmpty {
                 // Empty state
                 ContentUnavailableView {
                     Label("No Terms Yet", systemImage: "calendar")
@@ -54,17 +54,19 @@ public struct TermsListView: View {
                 }
             } else {
                 List(selection: $selectedTerm) {
-                    ForEach(viewModel.termsWithPeriods) { item in
-                        TermRowView(term: item.term, timePeriod: item.timePeriod)
+                    ForEach(viewModel.terms) { termData in
+                        // Transform TermData to entities for TermRowView
+                        let termWithPeriod = termData.asWithPeriod
+                        TermRowView(term: termWithPeriod.term, timePeriod: termWithPeriod.timePeriod)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 // Tap row → edit
-                                termToEdit = (item.timePeriod, item.term)
+                                termToEdit = (termWithPeriod.timePeriod, termWithPeriod.term)
                                 showingForm = true
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
-                                    termToDelete = item
+                                    termToDelete = termData
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -72,7 +74,7 @@ public struct TermsListView: View {
                             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 Button {
                                     // Swipe left → edit
-                                    termToEdit = (item.timePeriod, item.term)
+                                    termToEdit = (termWithPeriod.timePeriod, termWithPeriod.term)
                                     showingForm = true
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
@@ -82,7 +84,7 @@ public struct TermsListView: View {
                             // Context menu for mouse/trackpad users
                             .contextMenu {
                                 Button {
-                                    termToEdit = (item.timePeriod, item.term)
+                                    termToEdit = (termWithPeriod.timePeriod, termWithPeriod.term)
                                     showingForm = true
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
@@ -91,12 +93,12 @@ public struct TermsListView: View {
                                 Divider()
 
                                 Button(role: .destructive) {
-                                    termToDelete = item
+                                    termToDelete = termData
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
-                            .tag(item)
+                            .tag(termData)
                     }
                 }
                 #if os(macOS)
@@ -148,21 +150,18 @@ public struct TermsListView: View {
             "Delete Term",
             isPresented: .constant(termToDelete != nil),
             presenting: termToDelete
-        ) { item in
+        ) { termData in
             Button("Cancel", role: .cancel) {
                 termToDelete = nil
             }
             Button("Delete", role: .destructive) {
                 Task {
-                    await viewModel.deleteTerm(
-                        timePeriod: item.timePeriod,
-                        goalTerm: item.term
-                    )
+                    await viewModel.deleteTerm(termData)
                     termToDelete = nil
                 }
             }
-        } message: { item in
-            Text("Are you sure you want to delete Term \(item.term.termNumber)?")
+        } message: { termData in
+            Text("Are you sure you want to delete Term \(termData.termNumber)?")
         }
         .alert("Error", isPresented: .constant(viewModel.hasError)) {
             Button("OK") {

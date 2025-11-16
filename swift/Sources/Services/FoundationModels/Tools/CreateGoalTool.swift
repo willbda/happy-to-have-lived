@@ -181,9 +181,10 @@ public struct CreateGoalTool: Tool {
         title: String,
         description: String?
     ) async throws -> DuplicateCheckResult {
-        // Fetch existing goals
+        // Fetch existing goals and transform to GoalWithDetails for compatibility
         let repository = GoalRepository(database: database)
-        let existingGoals = try await repository.fetchAll()
+        let goalDataArray = try await repository.fetchAll()
+        let existingGoals = goalDataArray.map { $0.asDetails }
 
         // Try semantic checking first
         let semanticService = SemanticService(database: database, configuration: .default)

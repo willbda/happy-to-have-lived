@@ -58,7 +58,7 @@ public final class TermsListViewModel {
     // MARK: - Observable State (internal visibility)
 
     /// Terms data for display (canonical type)
-    var terms: [TermData] = []
+    var terms: [TimePeriodData] = []
 
     /// Loading state for UI feedback
     var isLoading: Bool = false
@@ -129,12 +129,12 @@ public final class TermsListViewModel {
     ///
     /// **Implementation**: Uses TimePeriodCoordinator for atomic delete
     /// **Side Effects**: Reloads terms list after successful deletion
-    public func deleteTerm(_ termData: TermData) async {
+    public func deleteTerm(_ termData: TimePeriodData) async {
         isLoading = true
         errorMessage = nil
 
         do {
-            // Transform TermData to entities for coordinator
+            // Transform TimePeriodData to entities for coordinator
             let termWithPeriod = termData.asWithPeriod
 
             // Use coordinator for atomic delete

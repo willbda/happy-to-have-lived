@@ -29,10 +29,10 @@ public struct TermsListView: View {
     @State private var termToEdit: (timePeriod: TimePeriod, goalTerm: GoalTerm)?
 
     /// Selected term for keyboard navigation
-    @State private var selectedTerm: TermData?
+    @State private var selectedTerm: TimePeriodData?
 
     /// Term to delete (for confirmation)
-    @State private var termToDelete: TermData?
+    @State private var termToDelete: TimePeriodData?
 
     public var body: some View {
         Group {
@@ -55,7 +55,7 @@ public struct TermsListView: View {
             } else {
                 List(selection: $selectedTerm) {
                     ForEach(viewModel.terms) { termData in
-                        // Transform TermData to entities for TermRowView
+                        // Transform TimePeriodData to entities for TermRowView
                         let termWithPeriod = termData.asWithPeriod
                         TermRowView(term: termWithPeriod.term, timePeriod: termWithPeriod.timePeriod)
                             .contentShape(Rectangle())

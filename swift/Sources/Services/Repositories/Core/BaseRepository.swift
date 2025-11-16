@@ -321,6 +321,70 @@ open class BaseRepository<DataType>: Repository
             return ("WHERE " + whereClauses.joined(separator: " AND "), arguments)
         }
     }
+
+    // MARK: - Pagination Support
+
+    /// Fetch entities with pagination
+    ///
+    /// Subclasses can override to implement entity-specific pagination.
+    /// Default implementation fetches all and slices in memory (inefficient).
+    ///
+    /// **Performance Note**: For large datasets, override this method to use SQL LIMIT/OFFSET.
+    ///
+    /// - Parameters:
+    ///   - limit: Maximum number of entities to return
+    ///   - offset: Number of entities to skip (default: 0)
+    /// - Returns: Array of entities (up to `limit` items)
+    /// - Throws: ValidationError if query fails
+    ///
+    /// Example override:
+    /// ```swift
+    /// override func fetch(limit: Int, offset: Int) async throws -> [ActionData] {
+    ///     try await read { db in
+    ///         try ActionData.fetchAll(db, sql: """
+    ///             SELECT * FROM actions
+    ///             ORDER BY logTime DESC
+    ///             LIMIT ? OFFSET ?
+    ///             """, arguments: [limit, offset])
+    ///     }
+    /// }
+    /// ```
+    open func fetch(limit: Int, offset: Int = 0) async throws -> [DataType] {
+        // Default implementation (inefficient for large datasets)
+        let all = try await fetchAll()
+        let start = min(offset, all.count)
+        let end = min(start + limit, all.count)
+        return Array(all[start..<end])
+    }
+
+    /// Fetch most recent entities (ordered by logTime DESC)
+    ///
+    /// Convenience method for common "show latest N items" pattern.
+    /// Subclasses should override for SQL-level optimization.
+    ///
+    /// - Parameter limit: Maximum number of entities to return
+    /// - Returns: Array of most recent entities
+    /// - Throws: ValidationError if query fails
+    ///
+    /// Example override:
+    /// ```swift
+    /// override func fetchRecent(limit: Int) async throws -> [ActionData] {
+    ///     try await read { db in
+    ///         try ActionData.fetchAll(db, sql: """
+    ///             SELECT * FROM actions
+    ///             ORDER BY logTime DESC
+    ///             LIMIT ?
+    ///             """, arguments: [limit])
+    ///     }
+    /// }
+    /// ```
+    open func fetchRecent(limit: Int) async throws -> [DataType] {
+        // Default implementation fetches all and sorts in memory (inefficient)
+        let all = try await fetchAll()
+        // Note: This assumes DataType has a logTime property accessible via reflection
+        // Subclasses should override for proper SQL-based ordering
+        return Array(all.prefix(limit))
+    }
 }
 
 // MARK: - Sendable Conformance

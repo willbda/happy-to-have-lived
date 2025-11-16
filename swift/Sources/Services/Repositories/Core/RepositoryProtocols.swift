@@ -36,7 +36,7 @@ public protocol Repository: Sendable {
     /// The canonical data type this repository manages
     ///
     /// Must be Codable (for export), Sendable (for concurrency), and Identifiable (for SwiftUI).
-    /// Examples: ActionData, GoalData, PersonalValueData, TermData
+    /// Examples: ActionData, GoalData, PersonalValueData, TimePeriodData
     associatedtype DataType: Codable & Sendable & Identifiable
 
     /// Database writer instance (injected dependency)

@@ -135,7 +135,7 @@ public struct CSVFormatter {
     // MARK: - Terms CSV
 
     /// Encode terms to CSV format
-    public func formatTerms(_ terms: [TermData]) throws -> Data {
+    public func formatTerms(_ terms: [TimePeriodData]) throws -> Data {
         var csv =
             "ID,TermNumber,Theme,Reflection,Status,PeriodID,PeriodTitle,StartDate,EndDate,AssignedGoals\n"
 

@@ -32,7 +32,7 @@ if [ "$USAGES" -eq 0 ]; then
   echo "  1. Remove .asValue from PersonalValueData.swift"
   echo "  2. Remove .asDetails from GoalData.swift"
   echo "  3. Remove .asDetails from ActionData.swift"
-  echo "  4. Remove .asWithPeriod from TermData.swift"
+  echo "  4. Remove .asWithPeriod from TimePeriodData.swift"
   echo "  5. Run swift build to verify"
   exit 0
 else

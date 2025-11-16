@@ -76,19 +76,20 @@ The canonical DataType refactoring introduced backward compatibility extensions 
 
 ### 4. Term Ecosystem
 
-**Backward Compatibility Method**: `TermData.asWithPeriod`
+**Backward Compatibility Method**: `TimePeriodData.asWithPeriod`
+**Note**: Renamed from `TermData` to `TimePeriodData` on 2025-11-16 for architectural clarity.
 
 | Component | Location | Usage | Reason |
 |-----------|----------|-------|--------|
 | TermRowView | `Views/RowViews/` | `let term: GoalTerm, timePeriod: TimePeriod` | Display component expects separate entities |
 | TermFormView | `Views/FormViews/` | `let termToEdit: (TimePeriod, GoalTerm)?` | Form component expects tuple |
-| TermsListViewModel | `ViewModels/` | `termData.asWithPeriod` → coordinator | Coordinator expects separate entities for delete |
+| TermsListViewModel | `ViewModels/` | `timePeriodData.asWithPeriod` → coordinator | Coordinator expects separate entities for delete |
 | TermsListView | `Views/ListViews/` | Transform for display | Passes to child components |
 
 **Retirement Blockers**:
-- [ ] TermRowView signature (separate entities → `TermData`)
-- [ ] TermFormView signature (tuple → `TermData?`)
-- [ ] TimePeriodCoordinator.delete() signature (separate entities → `TermData`)
+- [ ] TermRowView signature (separate entities → `TimePeriodData`)
+- [ ] TermFormView signature (tuple → `TimePeriodData?`)
+- [ ] TimePeriodCoordinator.delete() signature (separate entities → `TimePeriodData`)
 
 **Dependencies**: 2 views + 1 coordinator = **3 components**
 
@@ -189,7 +190,7 @@ public var asDetails: GoalWithDetails { ... }
 // DELETE from ActionData.swift
 public var asDetails: ActionWithDetails { ... }
 
-// DELETE from TermData.swift
+// DELETE from TimePeriodData.swift
 public var asWithPeriod: TermWithPeriod { ... }
 ```
 

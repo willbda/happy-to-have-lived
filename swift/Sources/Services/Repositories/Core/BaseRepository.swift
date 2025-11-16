@@ -173,13 +173,13 @@ open class BaseRepository<DataType>: Repository
                     return .invalidGoal("Goal not found")
                 }
                 if message.contains("valueId") {
-                    return .invalidValue("Personal value not found")
+                    return .emptyValue("Personal value not found")
                 }
                 if message.contains("termId") {
-                    return .invalidTerm("Term not found")
+                    return .databaseConstraint("Term not found")
                 }
                 if message.contains("actionId") {
-                    return .invalidAction("Action not found")
+                    return .databaseConstraint("Action not found")
                 }
                 if message.contains("expectationId") {
                     return .invalidExpectation("Expectation not found")
@@ -221,7 +221,7 @@ open class BaseRepository<DataType>: Repository
                     return .invalidPriority("Priority must be between 1 and 10")
                 }
                 if message.contains("importance") || message.contains("urgency") {
-                    return .invalidImportance("Importance/urgency must be between 1 and 5")
+                    return .invalidPriority("Importance/urgency must be between 1 and 5")
                 }
             }
             return .databaseConstraint(dbError.message ?? "Data validation failed")
@@ -231,13 +231,13 @@ open class BaseRepository<DataType>: Repository
             return .databaseConstraint(dbError.message ?? "Database constraint violated")
 
         case .SQLITE_BUSY, .SQLITE_LOCKED:
-            return .databaseLocked("Database is temporarily unavailable. Please try again.")
+            return .databaseConstraint("Database is temporarily unavailable. Please try again.")
 
         case .SQLITE_CORRUPT:
-            return .databaseCorrupt("Database integrity error. Please contact support.")
+            return .databaseConstraint("Database integrity error. Please contact support.")
 
         case .SQLITE_FULL:
-            return .storageFull("Storage is full. Please free up space and try again.")
+            return .databaseConstraint("Storage is full. Please free up space and try again.")
 
         default:
             // For any other error, return a generic database error

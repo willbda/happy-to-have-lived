@@ -267,26 +267,29 @@ public struct CommonFetchRequests {
         }
     }
 
-    /// Count entities in a table with optional filter
-    public struct CountRequest: FetchKeyRequest {
-        public typealias Value = Int
-
-        let tableName: String
-        let whereClause: String?
-        let arguments: [any DatabaseValueConvertible]
-
-        public init(tableName: String, whereClause: String? = nil, arguments: [any DatabaseValueConvertible] = []) {
-            self.tableName = tableName
-            self.whereClause = whereClause
-            self.arguments = arguments
-        }
-
-        public func fetch(_ db: Database) throws -> Int {
-            var sql = "SELECT COUNT(*) FROM \(tableName)"
-            if let whereClause = whereClause {
-                sql += " WHERE \(whereClause)"
-            }
-            return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(arguments)) ?? 0
-        }
-    }
+    // NOTE: CountRequest commented out - not compatible with Swift 6 Sendable requirements
+    // and not used in v3 repositories (which use direct SQL instead of FetchKeyRequest pattern)
+    //
+    // /// Count entities in a table with optional filter
+    // public struct CountRequest: FetchKeyRequest {
+    //     public typealias Value = Int
+    //
+    //     let tableName: String
+    //     let whereClause: String?
+    //     let arguments: [any DatabaseValueConvertible]
+    //
+    //     public init(tableName: String, whereClause: String? = nil, arguments: [any DatabaseValueConvertible] = []) {
+    //         self.tableName = tableName
+    //         self.whereClause = whereClause
+    //         self.arguments = arguments
+    //     }
+    //
+    //     public func fetch(_ db: Database) throws -> Int {
+    //         var sql = "SELECT COUNT(*) FROM \(tableName)"
+    //         if let whereClause = whereClause {
+    //             sql += " WHERE \(whereClause)"
+    //         }
+    //         return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(arguments)) ?? 0
+    //     }
+    // }
 }

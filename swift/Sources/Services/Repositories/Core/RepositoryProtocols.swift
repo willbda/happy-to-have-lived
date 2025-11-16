@@ -16,6 +16,7 @@
 import Foundation
 import Models
 import SQLiteData
+import GRDB
 
 // MARK: - Base Repository Protocol
 

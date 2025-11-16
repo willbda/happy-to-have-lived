@@ -117,15 +117,15 @@ public struct DateFilter {
 /// PATTERN: Singleton formatter for consistent date representation in exports.
 /// Thread-safe through internal synchronization.
 public struct ExportDateFormatter {
-    /// Shared formatter instance (thread-safe)
-    private static let formatter: ISO8601DateFormatter = {
+    /// Shared formatter instance (thread-safe through immutability)
+    private nonisolated(unsafe) static let formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
 
-    /// Shared formatter with fractional seconds
-    private static let formatterWithFractionalSeconds: ISO8601DateFormatter = {
+    /// Shared formatter with fractional seconds (thread-safe through immutability)
+    private nonisolated(unsafe) static let formatterWithFractionalSeconds: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f

@@ -67,7 +67,7 @@ public struct GoalFormView: View {
 
     @State private var availableMeasures: [Measure] = []
     @State private var availableValues: [PersonalValue] = []
-    @State private var availableTerms: [TermWithPeriod] = []
+    @State private var availableTerms: [TimePeriodData] = []
 
     // MARK: - Initialization
 
@@ -232,9 +232,9 @@ public struct GoalFormView: View {
                 Section("Term Assignment (Optional)") {
                     Picker("Assign to Term", selection: $selectedTermId) {
                         Text("No term").tag(nil as UUID?)
-                        ForEach(availableTerms) { termWithPeriod in
-                            Text("Term \(termWithPeriod.term.termNumber)")
-                                .tag(termWithPeriod.term.id as UUID?)  // Use GoalTerm.id, not timePeriodId
+                        ForEach(availableTerms) { termData in
+                            Text("Term \(termData.termNumber)")
+                                .tag(termData.id as UUID?)  // TimePeriodData.id is GoalTerm.id
                         }
                     }
                 }

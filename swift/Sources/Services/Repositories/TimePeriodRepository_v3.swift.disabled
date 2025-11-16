@@ -1,0 +1,298 @@
+//
+// TimePeriodRepository_v3.swift
+// Written by Claude Code on 2025-11-16
+//
+// PURPOSE:
+// Repository for Term entities using canonical TermData type.
+// Flattens GoalTerm + TimePeriod (1:1 relationship) into single structure.
+//
+// DESIGN DECISIONS:
+// - Extends BaseRepository<TermData> (no separate export type)
+// - Uses simple JOIN (goalTerms → timePeriods, 1:1 required relationship)
+// - TermData flattens both tables (no nested structures)
+// - Inherits: error mapping, read/write wrappers, date filtering, pagination
+// - Adds entity-specific: term number queries, status filtering, date range overlap checks
+//
+// NAMING NOTE:
+// File is "TimePeriodRepository" but works with TermData (GoalTerm + TimePeriod).
+// Consider renaming to TermRepository_v3 for clarity? Or keep for consistency with current naming?
+//
+// INTERACTION WITH CORE:
+// - BaseRepository: Provides read/write wrappers, error mapping, pagination helpers
+// - QueryStrategies: Uses simple JOIN (not JSON aggregation - 1:1 relationship)
+// - ExportSupport: Date filtering via buildDateFilter() helper
+// - RepositoryProtocols: Conforms to Repository protocol (single DataType)
+//
+
+import Foundation
+import Models
+import SQLiteData
+import GRDB
+
+/// Repository for managing Term entities (GoalTerm + TimePeriod flattened)
+///
+/// **Architecture Pattern**:
+/// ```
+/// TimePeriodRepository_v3 → BaseRepository<TermData> → Repository protocol
+///                         ↓
+///                  Simple 1:1 JOIN (goalTerms → timePeriods)
+/// ```
+///
+/// **Simplicity Factors**:
+/// - 1:1 relationship (every GoalTerm has exactly one TimePeriod)
+/// - No nested structures (all fields flattened into TermData)
+/// - No additional relationships to load (terms are containers for goals)
+///
+/// **What BaseRepository Provides**:
+/// - ✅ Error mapping (mapDatabaseError)
+/// - ✅ Read/write wrappers with automatic error handling
+/// - ✅ Date filtering helpers (buildDateFilter)
+/// - ✅ Pagination (fetch(limit:offset:), fetchRecent(limit:))
+///
+/// **What This Repository Adds**:
+/// - GoalTerm + TimePeriod JOIN (1:1 flattening)
+/// - Term number queries (fetch by term number)
+/// - Status filtering (active, completed, etc.)
+/// - Date range overlap checks (prevent overlapping terms)
+/// - Current term detection (which term contains today?)
+///
+public final class TimePeriodRepository_v3: BaseRepository<TermData> {
+    // MARK: - Required Overrides
+
+    /// Fetch all terms with time period details
+    ///
+    /// **Implementation Strategy**: Simple 1:1 JOIN
+    /// - Join goalTerms → timePeriods (required foreign key)
+    /// - Flatten all fields into TermData
+    /// - No JSON aggregation needed (1:1 relationship)
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// SELECT
+    ///   gt.id as termId,
+    ///   gt.termNumber,
+    ///   gt.theme,
+    ///   gt.reflection,
+    ///   gt.status,
+    ///   tp.id as timePeriodId,
+    ///   tp.title,
+    ///   tp.detailedDescription,
+    ///   tp.freeformNotes,
+    ///   tp.logTime,
+    ///   tp.startDate,
+    ///   tp.endDate
+    /// FROM goalTerms gt
+    /// JOIN timePeriods tp ON gt.timePeriodId = tp.id
+    /// ORDER BY gt.termNumber DESC
+    /// ```
+    ///
+    /// **Simplest Query**: No JSON, no 1:many relationships
+    ///
+    /// TODO: Implement simple JOIN query
+    public override func fetchAll() async throws -> [TermData] {
+        fatalError("TODO: Implement 1:1 JOIN with timePeriods")
+        // try await read { db in
+        //     try TermData.fetchAll(db, sql: simpleJoinSQL)
+        // }
+    }
+
+    /// Check if term exists by ID
+    ///
+    /// **Implementation**: Simple SELECT COUNT query on goalTerms
+    /// Uses inherited `read` wrapper for automatic error mapping.
+    ///
+    /// TODO: Implement using #sql or raw SQL
+    public override func exists(_ id: UUID) async throws -> Bool {
+        fatalError("TODO: Implement exists check on goalTerms")
+        // try await read { db in
+        //     try GoalTerm.filter(id: id).fetchCount(db) > 0
+        // }
+    }
+
+    /// Fetch terms with optional date filtering (for export)
+    ///
+    /// **Implementation**: Same JOIN + WHERE clause on time period dates
+    /// Filter on timePeriods.startDate or timePeriods.endDate
+    ///
+    /// **Date Filter Options**:
+    /// - Filter by term creation (timePeriods.logTime)
+    /// - Filter by term period (timePeriods.startDate, endDate)
+    ///
+    /// TODO: Decide which date to filter on, implement with WHERE clause
+    public override func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [TermData] {
+        fatalError("TODO: Implement export with date filtering (on which date field?)")
+        // Options:
+        // 1. WHERE tp.logTime BETWEEN ? AND ? (when term was created)
+        // 2. WHERE tp.startDate <= ? AND tp.endDate >= ? (term period overlaps range)
+    }
+
+    // MARK: - Pagination Overrides (Optional)
+
+    /// Fetch paginated terms (override for SQL LIMIT/OFFSET)
+    ///
+    /// **Optimization**: Add LIMIT/OFFSET to JOIN query
+    ///
+    /// TODO: Implement SQL-level pagination
+    public override func fetch(limit: Int, offset: Int = 0) async throws -> [TermData] {
+        fatalError("TODO: Add LIMIT/OFFSET to JOIN")
+    }
+
+    /// Fetch most recent terms (override for SQL ORDER BY + LIMIT)
+    ///
+    /// **Note**: "Recent" could mean:
+    /// - Latest term number (termNumber DESC)
+    /// - Latest creation time (tp.logTime DESC)
+    /// - Latest period start (tp.startDate DESC)
+    ///
+    /// Choose based on use case (probably termNumber DESC for "current term")
+    ///
+    /// TODO: Implement with SQL sorting
+    public override func fetchRecent(limit: Int) async throws -> [TermData] {
+        fatalError("TODO: Add ORDER BY termNumber DESC LIMIT ?")
+    }
+
+    // MARK: - Entity-Specific Queries
+
+    /// Fetch term by term number
+    ///
+    /// **Use Case**: "Show Term 5" or "What's the current term?"
+    /// **Implementation**: WHERE termNumber = ?
+    ///
+    /// **Note**: Term numbers should be unique (enforced by schema or validation)
+    ///
+    /// TODO: Implement term number lookup
+    public func fetchByTermNumber(_ termNumber: Int) async throws -> TermData? {
+        fatalError("TODO: Implement WHERE termNumber = ?")
+    }
+
+    /// Fetch terms by status
+    ///
+    /// **Use Case**: "Show all active terms" or "Show completed terms"
+    /// **Implementation**: WHERE status = ?
+    ///
+    /// **Statuses**: planned, active, completed, delayed, on_hold, cancelled
+    ///
+    /// TODO: Implement status filtering
+    public func fetchByStatus(_ status: String) async throws -> [TermData] {
+        fatalError("TODO: Implement WHERE status = ?")
+    }
+
+    /// Fetch current term (contains today's date)
+    ///
+    /// **Use Case**: "What term am I in right now?"
+    /// **Implementation**: WHERE startDate <= ? AND endDate >= ?
+    ///
+    /// **Note**: Should return at most 1 term (if terms don't overlap)
+    /// Returns nil if no term contains the given date.
+    ///
+    /// TODO: Implement date range containment check
+    public func fetchCurrent(asOf date: Date = Date()) async throws -> TermData? {
+        fatalError("TODO: Implement WHERE startDate <= ? AND endDate >= ?")
+    }
+
+    /// Fetch terms that overlap with a date range
+    ///
+    /// **Use Case**: "What terms overlap with this 3-month period?"
+    /// **Implementation**: WHERE NOT (endDate < rangeStart OR startDate > rangeEnd)
+    ///
+    /// **Use for validation**: Prevent creating overlapping terms
+    ///
+    /// TODO: Implement date range overlap detection
+    public func fetchOverlapping(
+        start: Date,
+        end: Date
+    ) async throws -> [TermData] {
+        fatalError("TODO: Implement overlap detection SQL")
+        // Overlap logic: NOT (tp.endDate < ? OR tp.startDate > ?)
+    }
+
+    /// Fetch terms containing a specific date
+    ///
+    /// **Use Case**: "What term was I in on this past date?"
+    /// **Implementation**: WHERE startDate <= ? AND endDate >= ?
+    ///
+    /// **Note**: Similar to fetchCurrent but for arbitrary date
+    ///
+    /// TODO: Implement date containment check
+    public func fetchContaining(date: Date) async throws -> [TermData] {
+        fatalError("TODO: Implement WHERE startDate <= ? AND endDate >= ?")
+    }
+
+    /// Check if a date range would overlap with existing terms
+    ///
+    /// **Use Case**: Validation before creating new term
+    /// **Implementation**: Check if fetchOverlapping returns any results
+    ///
+    /// **Note**: This is a compound check, not just ID uniqueness
+    ///
+    /// TODO: Implement overlap validation helper
+    public func hasOverlap(start: Date, end: Date, excluding termId: UUID? = nil) async throws -> Bool {
+        fatalError("TODO: Check fetchOverlapping, exclude termId if updating existing term")
+    }
+
+    // MARK: - Private Helpers (Minimal - 1:1 JOIN is straightforward)
+
+    /// Assemble TermData from query row
+    ///
+    /// **Pattern**: Direct mapping (no JSON parsing needed)
+    /// All fields come from flattened JOIN result.
+    ///
+    /// **Note**: Might not even need this helper if SQL returns TermData directly
+    ///
+    /// TODO: Implement direct mapping (or remove if unnecessary)
+    private func assembleTermData(from row: TermQueryRow) -> TermData {
+        fatalError("TODO: Direct field mapping to TermData")
+    }
+
+    // TODO: Define TermQueryRow struct (mirrors SQL JOIN result)
+    // NOTE: TermData itself might be Decodable from SQL row directly!
+    // Consider if TermQueryRow is even necessary.
+    private struct TermQueryRow: Decodable, FetchableRecord, Sendable {
+        // GoalTerm fields
+        let termId: UUID         // Aliased: gt.id as termId
+        let termNumber: Int
+        let theme: String?
+        let reflection: String?
+        let status: String
+
+        // TimePeriod fields (flattened)
+        let timePeriodId: UUID
+        let title: String
+        let detailedDescription: String?
+        let freeformNotes: String?
+        let logTime: Date
+        let startDate: Date
+        let endDate: Date
+    }
+}
+
+// MARK: - Sendable Conformance
+
+// TimePeriodRepository_v3 is Sendable because:
+// - Inherits from BaseRepository (already Sendable)
+// - No additional mutable state
+// - Safe to pass between actor boundaries
+extension TimePeriodRepository_v3: @unchecked Sendable {}
+
+// =============================================================================
+// IMPLEMENTATION CHECKLIST
+// =============================================================================
+//
+// [ ] Consider renaming file to TermRepository_v3 for clarity
+// [ ] Define TermQueryRow struct OR verify TermData is directly Decodable from SQL
+// [ ] Write simple 1:1 JOIN SQL (goalTerms → timePeriods)
+// [ ] Implement assembleTermData(from:) - direct mapping (or remove if unnecessary)
+// [ ] Override fetchAll() - execute JOIN, map rows to TermData
+// [ ] Override exists(_:) - simple ID check on goalTerms
+// [ ] Override fetchForExport(from:to:) - decide date column, add WHERE clause
+// [ ] Override fetch(limit:offset:) - add LIMIT/OFFSET (optional but recommended)
+// [ ] Override fetchRecent(limit:) - add ORDER BY termNumber DESC LIMIT ?
+// [ ] Implement fetchByTermNumber(_:) - WHERE termNumber = ?
+// [ ] Implement fetchByStatus(_:) - WHERE status = ?
+// [ ] Implement fetchCurrent(asOf:) - WHERE startDate <= ? AND endDate >= ?
+// [ ] Implement fetchOverlapping(start:end:) - overlap detection SQL
+// [ ] Implement fetchContaining(date:) - containment check
+// [ ] Implement hasOverlap(start:end:excluding:) - validation helper
+// [ ] Test with TermData.asWithPeriod for backward compatibility
+//
+// =============================================================================

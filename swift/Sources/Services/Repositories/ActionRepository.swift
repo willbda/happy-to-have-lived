@@ -468,7 +468,8 @@ public final class ActionRepository: BaseRepository<ActionData> {
     /// - Returns: Assembled ActionData
     /// - Throws: ValidationError if JSON parsing or UUID conversion fails
     private func assembleActionData(from row: ActionQueryRow) throws -> ActionData {
-        let decoder = JSONDecoder()
+        // Use BaseRepository's SQLite date decoder for JSON aggregation
+        let decoder = sqliteDateDecoder()
 
         // Parse action ID
         guard let actionUUID = UUID(uuidString: row.actionId) else {
@@ -495,7 +496,7 @@ public final class ActionRepository: BaseRepository<ActionData> {
                 measureUnit: m.measureUnit,
                 measureType: m.measureType,
                 value: m.value,
-                createdAt: parseDate(m.createdAt) ?? Date()
+                createdAt: m.createdAt  // Already decoded as Date by sqliteDateDecoder()
             )
         }
 
@@ -524,7 +525,7 @@ public final class ActionRepository: BaseRepository<ActionData> {
                 goalTitle: c.goalTitle,
                 contributionAmount: c.contributionAmount,
                 measureId: measureUUID,
-                createdAt: parseDate(c.createdAt) ?? Date()
+                createdAt: c.createdAt  // Already decoded as Date by sqliteDateDecoder()
             )
         }
 
@@ -533,9 +534,9 @@ public final class ActionRepository: BaseRepository<ActionData> {
             title: row.actionTitle,
             detailedDescription: row.actionDetailedDescription,
             freeformNotes: row.actionFreeformNotes,
-            logTime: parseDate(row.actionLogTime) ?? Date(),
+            logTime: row.actionLogTime,      // GRDB auto-converted to Date
             durationMinutes: row.actionDurationMinutes,
-            startTime: parseDate(row.actionStartTime),
+            startTime: row.actionStartTime,  // GRDB auto-converted to Date?
             measurements: measurements,
             contributions: contributions
         )
@@ -555,9 +556,9 @@ public final class ActionRepository: BaseRepository<ActionData> {
         let actionTitle: String?
         let actionDetailedDescription: String?
         let actionFreeformNotes: String?
-        let actionLogTime: String
+        let actionLogTime: Date        // GRDB auto-converts SQLite date → Swift Date
         let actionDurationMinutes: Double?
-        let actionStartTime: String?
+        let actionStartTime: Date?     // GRDB auto-converts SQLite date → Swift Date
 
         // JSON arrays (decoded as strings, parsed manually)
         let measurementsJson: String
@@ -570,7 +571,7 @@ public final class ActionRepository: BaseRepository<ActionData> {
     private struct MeasurementJsonRow: Decodable, Sendable {
         let measuredActionId: String
         let value: Double
-        let createdAt: String
+        let createdAt: Date          // JSONDecoder auto-converts with dateDecodingStrategy
         let measureId: String
         let measureTitle: String?
         let measureUnit: String
@@ -584,7 +585,7 @@ public final class ActionRepository: BaseRepository<ActionData> {
         let contributionId: String
         let contributionAmount: Double?
         let measureId: String?
-        let createdAt: String
+        let createdAt: Date      // JSONDecoder auto-converts with dateDecodingStrategy
         let goalId: String
         let goalTitle: String?  // From JOIN with expectations table
     }

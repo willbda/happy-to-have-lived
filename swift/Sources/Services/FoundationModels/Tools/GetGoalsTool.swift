@@ -63,25 +63,25 @@ public struct GetGoalsTool: Tool {
     // MARK: - Tool Execution
 
     public func call(arguments: Arguments) async throws -> GoalsResponse {
-        // Create repository
-        let repository = GoalRepository(database: database)
+        // Create repository (use v3 for canonical GoalData)
+        let repository = GoalRepository_v3(database: database)
 
-        // Fetch goals based on filters
-        var goals: [GoalWithDetails]
+        // Fetch goals based on filters (uses canonical GoalData)
+        let goals: [GoalData]
 
         if let termIdString = arguments.termId,
            let termUUID = UUID(uuidString: termIdString) {
             // Fetch goals for specific term
             goals = try await repository.fetchByTerm(termUUID)
         } else {
-            // Fetch all goals and transform to GoalWithDetails for compatibility
-            let goalDataArray = try await repository.fetchAll()
-            goals = goalDataArray.map { $0.asDetails }
+            // Fetch all goals
+            goals = try await repository.fetchAll()
         }
 
         // Apply status filter if provided
+        var filteredGoals = goals
         if let status = arguments.status {
-            goals = goals.filter { goal in
+            filteredGoals = filteredGoals.filter { goal in
                 // This would need to check goal status
                 // For now, we'll return all goals
                 true
@@ -89,29 +89,29 @@ public struct GetGoalsTool: Tool {
         }
 
         // Apply limit
-        goals = Array(goals.prefix(arguments.limit))
+        filteredGoals = Array(filteredGoals.prefix(arguments.limit))
 
-        // Map to response format
-        let summaries = goals.map { goal in
+        // Map GoalData to response format (flat structure access)
+        let summaries = filteredGoals.map { goal in
             GoalSummary(
-                id: goal.goal.id.uuidString,
-                title: goal.expectation.title ?? "Untitled Goal",
-                description: goal.expectation.detailedDescription,
-                startDate: goal.goal.startDate?.ISO8601Format(),
-                targetDate: goal.goal.targetDate?.ISO8601Format(),
-                importance: goal.expectation.expectationImportance,
-                urgency: goal.expectation.expectationUrgency,
-                metricTargets: goal.metricTargets.map { measure in
+                id: goal.id.uuidString,
+                title: goal.title ?? "Untitled Goal",
+                description: goal.detailedDescription,
+                startDate: goal.startDate?.ISO8601Format(),
+                targetDate: goal.targetDate?.ISO8601Format(),
+                importance: goal.expectationImportance,
+                urgency: goal.expectationUrgency,
+                metricTargets: goal.measureTargets.map { target in
                     MetricTarget(
-                        measureName: measure.measure.title ?? "Unknown",
-                        targetValue: measure.expectationMeasure.targetValue,
-                        unit: measure.measure.unit
+                        measureName: target.measureTitle ?? "Unknown",
+                        targetValue: target.targetValue,
+                        unit: target.measureUnit
                     )
                 },
                 alignedValues: goal.valueAlignments.map { alignment in
                     AlignedValue(
-                        valueName: alignment.value.title ?? "Untitled Value",
-                        alignmentStrength: alignment.goalRelevance.alignmentStrength ?? 5
+                        valueName: alignment.valueTitle,
+                        alignmentStrength: alignment.alignmentStrength ?? 5
                     )
                 }
             )

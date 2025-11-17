@@ -181,17 +181,35 @@ public struct CreateGoalTool: Tool {
         title: String,
         description: String?
     ) async throws -> DuplicateCheckResult {
-        // Fetch existing goals and transform to GoalWithDetails for compatibility
-        let repository = GoalRepository(database: database)
-        let goalDataArray = try await repository.fetchAll()
-        let existingGoals = goalDataArray.map { $0.asDetails }
+        // Fetch existing goals (canonical GoalData)
+        let repository = GoalRepository_v3(database: database)
+        let existingGoals = try await repository.fetchAll()
 
         // Try semantic checking first
         let semanticService = SemanticService(database: database, configuration: .default)
 
-        // Convert GoalWithDetails to GoalWithExpectation for detector
-        let goalsForDetection = existingGoals.map { details in
-            GoalWithExpectation(goal: details.goal, expectation: details.expectation)
+        // Convert GoalData to GoalWithExpectation for detector
+        let goalsForDetection = existingGoals.map { goalData in
+            GoalWithExpectation(
+                goal: Goal(
+                    expectationId: goalData.expectationId,
+                    startDate: goalData.startDate,
+                    targetDate: goalData.targetDate,
+                    actionPlan: goalData.actionPlan,
+                    expectedTermLength: goalData.expectedTermLength,
+                    id: goalData.id
+                ),
+                expectation: Expectation(
+                    title: goalData.title,
+                    detailedDescription: goalData.detailedDescription,
+                    freeformNotes: goalData.freeformNotes,
+                    expectationType: .goal,
+                    expectationImportance: goalData.expectationImportance,
+                    expectationUrgency: goalData.expectationUrgency,
+                    logTime: goalData.logTime,
+                    id: goalData.expectationId
+                )
+            )
         }
 
         do {
@@ -219,14 +237,14 @@ public struct CreateGoalTool: Tool {
         } catch {
             // Fall back to exact title matching if semantic check fails
             let exactMatch = existingGoals.first { goal in
-                goal.expectation.title?.lowercased() == title.lowercased()
+                goal.title?.lowercased() == title.lowercased()
             }
 
             if let match = exactMatch {
                 return DuplicateCheckResult(
                     isDuplicate: true,
                     message: "A goal with this exact title already exists",
-                    similarGoalId: match.goal.id.uuidString
+                    similarGoalId: match.id.uuidString
                 )
             }
 

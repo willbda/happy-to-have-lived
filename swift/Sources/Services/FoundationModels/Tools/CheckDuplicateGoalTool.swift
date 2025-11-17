@@ -70,10 +70,9 @@ public struct CheckDuplicateGoalTool: Tool {
         // Validate threshold
         let validThreshold = max(0.0, min(1.0, arguments.threshold))
 
-        // Fetch existing goals and transform to GoalWithDetails for compatibility
-        let repository = GoalRepository(database: database)
-        let goalDataArray = try await repository.fetchAll()
-        let existingGoals = goalDataArray.map { $0.asDetails }
+        // Fetch existing goals (canonical GoalData)
+        let repository = GoalRepository_v3(database: database)
+        let existingGoals = try await repository.fetchAll()
 
         // Check if no existing goals
         if existingGoals.isEmpty {
@@ -111,15 +110,35 @@ public struct CheckDuplicateGoalTool: Tool {
     /// Perform semantic similarity checking
     private func performSemanticCheck(
         semanticService: SemanticService,
-        existingGoals: [GoalWithDetails],
+        existingGoals: [GoalData],
         threshold: Double,
         title: String,
         description: String?,
         maxResults: Int
     ) async throws -> DuplicateCheckResponse {
-        // Convert GoalWithDetails to GoalWithExpectation for detector
-        let goalsForDetection = existingGoals.map { details in
-            GoalWithExpectation(goal: details.goal, expectation: details.expectation)
+        // Convert GoalData to GoalWithExpectation for detector
+        // This is necessary because SemanticGoalDetector expects Goal + Expectation entities
+        let goalsForDetection = existingGoals.map { goalData in
+            GoalWithExpectation(
+                goal: Goal(
+                    expectationId: goalData.expectationId,
+                    startDate: goalData.startDate,
+                    targetDate: goalData.targetDate,
+                    actionPlan: goalData.actionPlan,
+                    expectedTermLength: goalData.expectedTermLength,
+                    id: goalData.id
+                ),
+                expectation: Expectation(
+                    title: goalData.title,
+                    detailedDescription: goalData.detailedDescription,
+                    freeformNotes: goalData.freeformNotes,
+                    expectationType: .goal,
+                    expectationImportance: goalData.expectationImportance,
+                    expectationUrgency: goalData.expectationUrgency,
+                    logTime: goalData.logTime,
+                    id: goalData.expectationId
+                )
+            )
         }
 
         // Create duplication detector
@@ -173,22 +192,22 @@ public struct CheckDuplicateGoalTool: Tool {
 
     /// Perform exact title matching
     private func performExactCheck(
-        existingGoals: [GoalWithDetails],
+        existingGoals: [GoalData],
         title: String,
         maxResults: Int
     ) -> DuplicateCheckResponse {
         let normalizedTitle = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 
         let exactMatches = existingGoals.filter { goal in
-            goal.expectation.title?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalizedTitle
+            goal.title?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalizedTitle
         }
 
         if !exactMatches.isEmpty {
             let similarGoals = exactMatches.prefix(maxResults).map { goal in
                 SimilarGoal(
-                    id: goal.goal.id.uuidString,
-                    title: goal.expectation.title ?? "Untitled",
-                    description: goal.expectation.detailedDescription,
+                    id: goal.id.uuidString,
+                    title: goal.title ?? "Untitled",
+                    description: goal.detailedDescription,
                     similarityScore: 1.0,
                     similarityPercentage: 100,
                     matchType: "exact"
@@ -197,7 +216,7 @@ public struct CheckDuplicateGoalTool: Tool {
 
             return DuplicateCheckResponse(
                 isDuplicate: true,
-                similarGoals: similarGoals,
+                similarGoals: Array(similarGoals),
                 recommendedAction: "Exact title match found. This goal already exists."
             )
         }

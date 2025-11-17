@@ -107,7 +107,7 @@ extension MeasureData {
             unit,
             measureType,
             canonicalUnit ?? "",
-            conversionFactor.map(String.init) ?? "",
+            conversionFactor.map { String(describing: $0) } ?? "",
             logTime.ISO8601Format(),
         ]
     }

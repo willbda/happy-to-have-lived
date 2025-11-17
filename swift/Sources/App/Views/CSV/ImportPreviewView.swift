@@ -264,7 +264,7 @@ struct ImportPreviewView<T: Identifiable & Sendable>: View {
             .accessibilityLabel("Import \(selectedCount) selected \(entityTypeName)")
         }
         .padding(.vertical)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(.regularMaterial)
     }
 
     // MARK: - Computed Properties

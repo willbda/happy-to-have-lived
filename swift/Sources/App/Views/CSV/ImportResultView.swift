@@ -118,7 +118,7 @@ struct ImportResultView: View {
             )
         }
         .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(.regularMaterial)
         .cornerRadius(12)
     }
 
@@ -184,7 +184,7 @@ struct ImportResultView: View {
                     .padding()
                 }
                 .frame(maxHeight: 200)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(.regularMaterial)
                 .cornerRadius(8)
             }
         }

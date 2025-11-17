@@ -269,38 +269,38 @@ public final class ActionCoordinator: Sendable {
         }
     }
 
-    /// Deletes Action and its relationships.
-    /// - Parameters:
-    ///   - action: Action to delete
-    ///   - measurements: Associated MeasuredAction records to delete
-    ///   - contributions: Associated ActionGoalContribution records to delete
-    /// - Throws: Database errors if constraints violated
+    /// Delete action and all its relationships using canonical ActionData
     ///
-    /// IMPLEMENTATION:
-    /// 1. Delete measurements first (FK dependency)
-    /// 2. Delete contributions (FK dependency)
-    /// 3. Delete action last
+    /// Deletes in correct order respecting foreign key constraints:
+    /// 1. MeasuredActions (FK → Action)
+    /// 2. ActionGoalContributions (FK → Action)
+    /// 3. Action
     ///
-    /// NOTE: Caller is responsible for fetching measurements and contributions
-    /// before deletion (via ActionsQuery). This ensures we know what we're deleting.
-    public func delete(
-        action: Action,
-        measurements: [MeasuredAction],
-        contributions: [ActionGoalContribution]
-    ) async throws {
+    /// - Parameter actionData: Canonical action with all relationships
+    /// - Throws: DatabaseError if deletion fails
+    public func delete(_ actionData: ActionData) async throws {
         try await database.write { db in
-            // 1. Delete MeasuredAction records first (have FK to Action)
-            for measurement in measurements {
-                try MeasuredAction.delete(measurement).execute(db)
+            // 1. Delete MeasuredActions by ID
+            for measurement in actionData.measurements {
+                try db.execute(
+                    sql: "DELETE FROM measuredActions WHERE id = ?",
+                    arguments: [measurement.id.uuidString]
+                )
             }
 
-            // 2. Delete ActionGoalContribution records (have FK to Action)
-            for contribution in contributions {
-                try ActionGoalContribution.delete(contribution).execute(db)
+            // 2. Delete ActionGoalContributions by ID
+            for contribution in actionData.contributions {
+                try db.execute(
+                    sql: "DELETE FROM actionGoalContributions WHERE id = ?",
+                    arguments: [contribution.id.uuidString]
+                )
             }
 
-            // 3. Delete Action last
-            try Action.delete(action).execute(db)
+            // 3. Delete Action by ID
+            try db.execute(
+                sql: "DELETE FROM actions WHERE id = ?",
+                arguments: [actionData.id.uuidString]
+            )
         }
     }
 }

@@ -168,20 +168,19 @@ public final class PersonalValueCoordinator: Sendable {
         return updatedValue
     }
 
-    /// Deletes PersonalValue.
-    /// - Parameter value: PersonalValue to delete
-    /// - Throws: Database errors if constraints violated (e.g., GoalRelevances exist)
+    /// Delete personal value using canonical PersonalValueData
     ///
-    /// IMPLEMENTATION:
-    /// 1. Simple delete (no relationships to cascade for PersonalValue)
-    /// 2. Database FK constraints will prevent deletion if GoalRelevances exist
-    /// 3. For more complex entities (Action, Goal), see their coordinators for cascade pattern
-    ///
-    /// NOTE: If GoalRelevances reference this value, database will throw FK constraint error.
+    /// **NOTE**: Database FK constraints will prevent deletion if GoalRelevances exist.
     /// In future, could query for dependent goals and return helpful error message.
-    public func delete(value: PersonalValue) async throws {
+    ///
+    /// - Parameter valueData: Canonical personal value
+    /// - Throws: DatabaseError if deletion fails (e.g., FK constraint violation)
+    public func delete(_ valueData: PersonalValueData) async throws {
         try await database.write { db in
-            try PersonalValue.delete(value).execute(db)
+            try db.execute(
+                sql: "DELETE FROM personalValues WHERE id = ?",
+                arguments: [valueData.id.uuidString]
+            )
         }
     }
 }

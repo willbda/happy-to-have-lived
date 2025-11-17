@@ -398,36 +398,54 @@ public final class GoalCoordinator: Sendable {
     /// 4. Delete Goal (FK to Expectation)
     /// 5. Delete Expectation last
     ///
-    /// NOTE: Caller is responsible for fetching all relationships
-    /// before deletion (via GoalsQuery). This ensures we know what we're deleting.
-    public func delete(
-        goal: Goal,
-        expectation: Expectation,
-        targets: [ExpectationMeasure],
-        alignments: [GoalRelevance],
-        assignment: TermGoalAssignment?
-    ) async throws {
+    /// Delete goal and all its relationships using canonical GoalData
+    ///
+    /// Deletes in correct order respecting foreign key constraints:
+    /// 1. ExpectationMeasures (FK → Expectation)
+    /// 2. GoalRelevances (FK → Goal)
+    /// 3. TermGoalAssignment (FK → Goal)
+    /// 4. Goal (FK → Expectation)
+    /// 5. Expectation
+    ///
+    /// - Parameter goalData: Canonical goal with all relationships
+    /// - Throws: DatabaseError if deletion fails
+    public func delete(_ goalData: GoalData) async throws {
         try await database.write { db in
-            // 1. Delete ExpectationMeasures first (have FK to Expectation)
-            for target in targets {
-                try ExpectationMeasure.delete(target).execute(db)
+            // 1. Delete ExpectationMeasures by ID
+            for target in goalData.measureTargets {
+                try db.execute(
+                    sql: "DELETE FROM expectationMeasures WHERE id = ?",
+                    arguments: [target.id.uuidString]
+                )
             }
 
-            // 2. Delete GoalRelevances (have FK to Goal)
-            for alignment in alignments {
-                try GoalRelevance.delete(alignment).execute(db)
+            // 2. Delete GoalRelevances by ID
+            for alignment in goalData.valueAlignments {
+                try db.execute(
+                    sql: "DELETE FROM goalRelevances WHERE id = ?",
+                    arguments: [alignment.id.uuidString]
+                )
             }
 
-            // 3. Delete TermGoalAssignment if exists (has FK to Goal)
-            if let assignment = assignment {
-                try TermGoalAssignment.delete(assignment).execute(db)
+            // 3. Delete TermGoalAssignment if exists
+            if let assignment = goalData.termAssignment {
+                try db.execute(
+                    sql: "DELETE FROM termGoalAssignments WHERE id = ?",
+                    arguments: [assignment.id.uuidString]
+                )
             }
 
-            // 4. Delete Goal (has FK to Expectation)
-            try Goal.delete(goal).execute(db)
+            // 4. Delete Goal by ID
+            try db.execute(
+                sql: "DELETE FROM goals WHERE id = ?",
+                arguments: [goalData.id.uuidString]
+            )
 
-            // 5. Delete Expectation last
-            try Expectation.delete(expectation).execute(db)
+            // 5. Delete Expectation by ID
+            try db.execute(
+                sql: "DELETE FROM expectations WHERE id = ?",
+                arguments: [goalData.expectationId.uuidString]
+            )
         }
     }
 

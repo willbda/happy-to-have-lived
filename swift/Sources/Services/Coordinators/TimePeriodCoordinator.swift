@@ -171,28 +171,30 @@ public final class TimePeriodCoordinator: Sendable {
         }
     }
 
-    /// Deletes TimePeriod and its specialization.
-    /// - Parameters:
-    ///   - timePeriod: TimePeriod to delete
-    ///   - goalTerm: Associated GoalTerm to delete
-    /// - Throws: Database errors if constraints violated
+    /// Delete time period and its specialization using canonical TimePeriodData
     ///
-    /// IMPLEMENTATION:
-    /// 1. Delete specialization first (FK dependency)
-    /// 2. Delete TimePeriod
+    /// Deletes in correct order respecting foreign key constraints:
+    /// 1. GoalTerm (FK → TimePeriod)
+    /// 2. TimePeriod
     ///
-    /// NOTE: This will fail if TermGoalAssignments exist (FK constraint)
-    /// In future, could check for assignments and warn user first
-    public func delete(
-        timePeriod: TimePeriod,
-        goalTerm: GoalTerm
-    ) async throws {
+    /// **NOTE**: This will fail if TermGoalAssignments exist (FK constraint).
+    /// In future, could check for assignments and warn user first.
+    ///
+    /// - Parameter timePeriodData: Canonical time period with specialization
+    /// - Throws: DatabaseError if deletion fails (e.g., FK constraint violation)
+    public func delete(_ timePeriodData: TimePeriodData) async throws {
         try await database.write { db in
-            // 1. Delete GoalTerm first (has FK to TimePeriod)
-            try GoalTerm.delete(goalTerm).execute(db)
+            // 1. Delete GoalTerm by ID (has FK to TimePeriod)
+            try db.execute(
+                sql: "DELETE FROM goalTerms WHERE id = ?",
+                arguments: [timePeriodData.id.uuidString]
+            )
 
-            // 2. Delete TimePeriod
-            try TimePeriod.delete(timePeriod).execute(db)
+            // 2. Delete TimePeriod by ID
+            try db.execute(
+                sql: "DELETE FROM timePeriods WHERE id = ?",
+                arguments: [timePeriodData.timePeriodId.uuidString]
+            )
         }
     }
 }

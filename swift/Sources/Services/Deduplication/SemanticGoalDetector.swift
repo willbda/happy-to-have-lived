@@ -39,13 +39,13 @@ public final class SemanticGoalDetector: Sendable {
     /// Find duplicate goals based on title similarity
     /// - Parameters:
     ///   - title: Goal title to check
-    ///   - existingGoals: Goals to compare against
+    ///   - existingGoals: Goals to compare against (canonical GoalData)
     ///   - threshold: Minimum similarity (0.0-1.0) to consider a duplicate
     /// - Returns: Array of duplicate matches sorted by similarity (highest first)
     /// - Throws: DeduplicationError if semantic service unavailable
     public func findDuplicates(
         for title: String,
-        in existingGoals: [GoalWithExpectation],
+        in existingGoals: [GoalData],
         threshold: Double? = nil
     ) async throws -> [DuplicateMatch] {
         // Use config threshold if not specified
@@ -70,7 +70,7 @@ public final class SemanticGoalDetector: Sendable {
         // Note: Embeddings are cached automatically by SemanticService
         var candidateEmbeddings: [EmbeddingVector?] = []
         for goal in existingGoals {
-            let goalTitle = goal.expectation.title ?? "Untitled"
+            let goalTitle = goal.title ?? "Untitled"
             let embedding = try await semanticService.generateEmbedding(for: goalTitle)
             candidateEmbeddings.append(embedding)
         }
@@ -89,8 +89,8 @@ public final class SemanticGoalDetector: Sendable {
             if similarity >= minimumThreshold {
                 let goal = existingGoals[index]
                 matches.append(DuplicateMatch(
-                    entityId: goal.goal.id,
-                    title: goal.expectation.title ?? "Untitled",
+                    entityId: goal.id,
+                    title: goal.title ?? "Untitled",
                     similarity: similarity,
                     entityType: .goal
                 ))
@@ -107,11 +107,11 @@ public final class SemanticGoalDetector: Sendable {
     /// Check if title would create a duplicate (returns highest match if found)
     /// - Parameters:
     ///   - title: Goal title to check
-    ///   - existingGoals: Goals to compare against
+    ///   - existingGoals: Goals to compare against (canonical GoalData)
     /// - Returns: Highest similarity duplicate match, or nil if no duplicates
     public func checkForDuplicate(
         title: String,
-        in existingGoals: [GoalWithExpectation]
+        in existingGoals: [GoalData]
     ) async throws -> DuplicateMatch? {
         let duplicates = try await findDuplicates(
             for: title,
@@ -124,11 +124,11 @@ public final class SemanticGoalDetector: Sendable {
     /// Check if duplicate should block goal creation
     /// - Parameters:
     ///   - title: Goal title to check
-    ///   - existingGoals: Goals to compare against
+    ///   - existingGoals: Goals to compare against (canonical GoalData)
     /// - Returns: Blocking duplicate match if found, nil otherwise
     public func checkForBlockingDuplicate(
         title: String,
-        in existingGoals: [GoalWithExpectation]
+        in existingGoals: [GoalData]
     ) async throws -> DuplicateMatch? {
         guard let match = try await checkForDuplicate(title: title, in: existingGoals) else {
             return nil
@@ -143,30 +143,17 @@ public final class SemanticGoalDetector: Sendable {
     }
 }
 
-// MARK: - Helper Types
-
-/// Goal with its expectation (for title access)
-public struct GoalWithExpectation: Sendable {
-    public let goal: Goal
-    public let expectation: Expectation
-
-    public init(goal: Goal, expectation: Expectation) {
-        self.goal = goal
-        self.expectation = expectation
-    }
-}
-
 // MARK: - Convenience Extensions
 
 extension SemanticGoalDetector {
     /// Batch check multiple titles for duplicates
     /// - Parameters:
     ///   - titles: Array of goal titles to check
-    ///   - existingGoals: Goals to compare against
+    ///   - existingGoals: Goals to compare against (canonical GoalData)
     /// - Returns: Dictionary mapping titles to their duplicate matches
     public func batchCheck(
         titles: [String],
-        in existingGoals: [GoalWithExpectation]
+        in existingGoals: [GoalData]
     ) async throws -> [String: [DuplicateMatch]] {
         var results: [String: [DuplicateMatch]] = [:]
 

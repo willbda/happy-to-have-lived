@@ -116,32 +116,7 @@ public struct CheckDuplicateGoalTool: Tool {
         description: String?,
         maxResults: Int
     ) async throws -> DuplicateCheckResponse {
-        // Convert GoalData to GoalWithExpectation for detector
-        // This is necessary because SemanticGoalDetector expects Goal + Expectation entities
-        let goalsForDetection = existingGoals.map { goalData in
-            GoalWithExpectation(
-                goal: Goal(
-                    expectationId: goalData.expectationId,
-                    startDate: goalData.startDate,
-                    targetDate: goalData.targetDate,
-                    actionPlan: goalData.actionPlan,
-                    expectedTermLength: goalData.expectedTermLength,
-                    id: goalData.id
-                ),
-                expectation: Expectation(
-                    title: goalData.title,
-                    detailedDescription: goalData.detailedDescription,
-                    freeformNotes: goalData.freeformNotes,
-                    expectationType: .goal,
-                    expectationImportance: goalData.expectationImportance,
-                    expectationUrgency: goalData.expectationUrgency,
-                    logTime: goalData.logTime,
-                    id: goalData.expectationId
-                )
-            )
-        }
-
-        // Create duplication detector
+        // Create duplication detector (now uses GoalData directly)
         let detector = SemanticGoalDetector(
             semanticService: semanticService,
             config: DeduplicationConfig(
@@ -154,7 +129,7 @@ public struct CheckDuplicateGoalTool: Tool {
         // Check for duplicates
         let matches = try await detector.findDuplicates(
             for: title,
-            in: goalsForDetection,
+            in: existingGoals,
             threshold: threshold
         )
 

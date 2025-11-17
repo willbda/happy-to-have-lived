@@ -188,32 +188,8 @@ public struct CreateGoalTool: Tool {
         // Try semantic checking first
         let semanticService = SemanticService(database: database, configuration: .default)
 
-        // Convert GoalData to GoalWithExpectation for detector
-        let goalsForDetection = existingGoals.map { goalData in
-            GoalWithExpectation(
-                goal: Goal(
-                    expectationId: goalData.expectationId,
-                    startDate: goalData.startDate,
-                    targetDate: goalData.targetDate,
-                    actionPlan: goalData.actionPlan,
-                    expectedTermLength: goalData.expectedTermLength,
-                    id: goalData.id
-                ),
-                expectation: Expectation(
-                    title: goalData.title,
-                    detailedDescription: goalData.detailedDescription,
-                    freeformNotes: goalData.freeformNotes,
-                    expectationType: .goal,
-                    expectationImportance: goalData.expectationImportance,
-                    expectationUrgency: goalData.expectationUrgency,
-                    logTime: goalData.logTime,
-                    id: goalData.expectationId
-                )
-            )
-        }
-
         do {
-            // Use semantic similarity checking
+            // Use semantic similarity checking (now uses GoalData directly)
             let detector = SemanticGoalDetector(
                 semanticService: semanticService,
                 config: .goals
@@ -221,7 +197,7 @@ public struct CreateGoalTool: Tool {
 
             let matches = try await detector.findDuplicates(
                 for: title,
-                in: goalsForDetection,
+                in: existingGoals,
                 threshold: nil  // Use default from config
             )
 

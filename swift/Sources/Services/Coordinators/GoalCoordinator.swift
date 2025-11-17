@@ -455,15 +455,9 @@ public final class GoalCoordinator: Sendable {
     /// - Parameter title: Goal title to check
     /// - Throws: ValidationError.duplicateGoal if blocking duplicate found
     private func checkForDuplicates(title: String) async throws {
-        // Fetch existing goals with expectations for comparison
-        let existingGoals = try await database.read { db in
-            try Goal.all
-                .join(Expectation.all) { $0.expectationId.eq($1.id) }
-                .fetchAll(db)
-                .map { (goal, expectation) in
-                    GoalWithExpectation(goal: goal, expectation: expectation)
-                }
-        }
+        // Fetch existing goals (canonical GoalData from repository)
+        let repository = GoalRepository(database: database)
+        let existingGoals = try await repository.fetchAll()
 
         // No existing goals - no duplicates possible
         guard !existingGoals.isEmpty else {

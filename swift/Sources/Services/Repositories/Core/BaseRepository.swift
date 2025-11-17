@@ -280,6 +280,54 @@ open class BaseRepository<DataType>: Repository
         return formatter.string(from: date)
     }
 
+    /// Create a JSONDecoder configured for SQLite date formats
+    ///
+    /// **Use Case**: Repositories using JSON aggregation with date fields
+    ///
+    /// **Pattern**: SQLite stores dates as "yyyy-MM-dd HH:mm:ss.SSS" (space separator)
+    /// This differs from ISO8601 which uses 'T' separator.
+    ///
+    /// **Usage**:
+    /// ```swift
+    /// let decoder = sqliteDateDecoder()
+    /// let rows = try decoder.decode([MyJsonRow].self, from: jsonData)
+    /// ```
+    ///
+    /// - Returns: JSONDecoder with custom date decoding strategy for SQLite dates
+    public func sqliteDateDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+
+        // Configure date decoding for SQLite's date format ("2025-11-16 03:51:24.771")
+        // SQLite uses space separator, not ISO8601's 'T' separator
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            // SQLite format: "yyyy-MM-dd HH:mm:ss.SSS"
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
+            // Fallback for dates without fractional seconds
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Expected SQLite date format (yyyy-MM-dd HH:mm:ss.SSS), got: \(dateString)"
+            )
+        }
+
+        return decoder
+    }
+
     /// Build a date filter WHERE clause
     ///
     /// Helper method for repositories that support date filtering.

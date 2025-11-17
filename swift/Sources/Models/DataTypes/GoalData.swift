@@ -63,7 +63,7 @@ public struct GoalData: Identifiable, Hashable, Sendable, Codable {
 
     /// Flat measurement target data (no nested ExpectationMeasure entities)
     public struct MeasureTarget: Identifiable, Hashable, Sendable, Codable {
-        public let id: UUID              // expectationMeasure.id
+        public let id: UUID  // expectationMeasure.id
         public let measureId: UUID
         public let measureTitle: String?
         public let measureUnit: String
@@ -99,9 +99,9 @@ public struct GoalData: Identifiable, Hashable, Sendable, Codable {
 
     /// Flat value alignment data (no nested PersonalValue entities)
     public struct ValueAlignment: Identifiable, Hashable, Sendable, Codable {
-        public let id: UUID              // goalRelevance.id
+        public let id: UUID  // goalRelevance.id
         public let valueId: UUID
-        public let valueTitle: String    // For display convenience
+        public let valueTitle: String  // For display convenience
         public let alignmentStrength: Int?
         public let relevanceNotes: String?
         public let createdAt: Date
@@ -129,7 +129,7 @@ public struct GoalData: Identifiable, Hashable, Sendable, Codable {
 
     /// Flat term assignment data
     public struct TermAssignment: Identifiable, Hashable, Sendable, Codable {
-        public let id: UUID              // termGoalAssignment.id
+        public let id: UUID  // termGoalAssignment.id
         public let termId: UUID
         public let assignmentOrder: Int?
         public let createdAt: Date
@@ -220,7 +220,7 @@ extension GoalData {
     /// Provides flat representation suitable for spreadsheet import.
     public var csvRow: [String] {
         [
-            id.uuidString,
+            id.uuidString.lowercased(),
             title ?? "",
             detailedDescription ?? "",
             freeformNotes ?? "",
@@ -231,8 +231,11 @@ extension GoalData {
             String(expectationImportance),
             String(expectationUrgency),
             logTime.ISO8601Format(),
-            measureTargets.map { $0.measureTitle ?? $0.measureId.uuidString }.joined(separator: ";"),
-            alignedValueIds.map { $0.uuidString }.joined(separator: ";")
+            measureTargets.map {
+                $0.measureTitle ?? $0.measureId.uuidString.lowercased()
+            }.joined(
+                separator: ";"),
+            alignedValueIds.map { $0.uuidString.lowercased() }.joined(separator: ";"),
         ]
     }
 
@@ -251,7 +254,7 @@ extension GoalData {
             "Urgency",
             "Log Time",
             "Measure Targets",
-            "Aligned Values"
+            "Aligned Values",
         ]
     }
 }

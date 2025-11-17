@@ -98,7 +98,7 @@ extension PersonalValueData {
     /// Provides flat representation suitable for spreadsheet import.
     public var csvRow: [String] {
         [
-            id.uuidString,
+            id.uuidString.lowercased(),
             title,
             detailedDescription ?? "",
             freeformNotes ?? "",
@@ -108,7 +108,7 @@ extension PersonalValueData {
             alignmentGuidance ?? "",
             logTime.ISO8601Format(),
             String(alignedGoalCount),
-            alignedGoalIds.map { $0.uuidString }.joined(separator: ";")
+            alignedGoalIds.map { $0.uuidString.lowercased() }.joined(separator: ";"),
         ]
     }
 
@@ -125,7 +125,7 @@ extension PersonalValueData {
             "Alignment Guidance",
             "Log Time",
             "Aligned Goal Count",
-            "Aligned Goal IDs"
+            "Aligned Goal IDs",
         ]
     }
 }

@@ -50,7 +50,7 @@ public struct CSVFormatter {
                 .joined(separator: ";")
 
             let row = [
-                action.id.uuidString,
+                action.id.uuidString.lowercased(),
                 escapeCSV(action.title ?? ""),
                 escapeCSV(action.detailedDescription ?? ""),
                 escapeCSV(action.freeformNotes ?? ""),
@@ -92,7 +92,7 @@ public struct CSVFormatter {
                 .joined(separator: ";")
 
             var rowComponents = [String]()
-            rowComponents.append(goal.id.uuidString)
+            rowComponents.append(goal.id.uuidString.lowercased())
             rowComponents.append(escapeCSV(goal.title ?? ""))
             rowComponents.append(escapeCSV(goal.detailedDescription ?? ""))
             rowComponents.append(escapeCSV(goal.freeformNotes ?? ""))
@@ -148,7 +148,7 @@ public struct CSVFormatter {
                 .joined(separator: ";") ?? ""
 
             let row = [
-                term.id.uuidString,
+                term.id.uuidString.lowercased(),
                 String(term.termNumber),
                 escapeCSV(term.theme ?? ""),
                 escapeCSV(term.reflection ?? ""),

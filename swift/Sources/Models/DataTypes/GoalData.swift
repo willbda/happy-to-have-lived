@@ -11,7 +11,6 @@
 // - Flat structure with Goal + Expectation fields at top level
 // - Denormalized sub-structs for relationships (not full entities)
 // - Codable for direct JSON/CSV export
-// - .asDetails extension for backward compatibility
 //
 
 import Foundation
@@ -28,13 +27,15 @@ import Foundation
 /// **Usage**:
 /// ```swift
 /// // Repository returns this
-/// let goals = try await repository.fetchAllAsData()
+/// let goals = try await repository.fetchAll()
 ///
 /// // Export uses directly
 /// let json = try JSONEncoder().encode(goals)
 ///
-/// // Views transform if they need nested structure
-/// let details = goals.map { $0.asDetails }
+/// // Views use directly (no transformation needed)
+/// List(goals) { goal in
+///     GoalRow(goal: goal)
+/// }
 /// ```
 public struct GoalData: Identifiable, Hashable, Sendable, Codable {
     // MARK: - Core Identity
@@ -188,116 +189,6 @@ public struct GoalData: Identifiable, Hashable, Sendable, Codable {
 // MARK: - Convenience Transformations
 
 extension GoalData {
-    /// Transform to GoalWithDetails for views that need nested entity structure
-    ///
-    /// **When to use**: SwiftUI views that bind to nested entities
-    /// **When NOT to use**: Export, API responses, most list views
-    ///
-    /// **Note**: Creates entities from denormalized data.
-    /// Full fidelity for display purposes.
-    public var asDetails: GoalWithDetails {
-        // Reconstruct Goal
-        let goal = Goal(
-            expectationId: expectationId,
-            startDate: startDate,
-            targetDate: targetDate,
-            actionPlan: actionPlan,
-            expectedTermLength: expectedTermLength,
-            id: id
-        )
-
-        // Reconstruct Expectation
-        let expectation = Expectation(
-            title: title,
-            detailedDescription: detailedDescription,
-            freeformNotes: freeformNotes,
-            expectationType: .goal,
-            expectationImportance: expectationImportance,
-            expectationUrgency: expectationUrgency,
-            logTime: logTime,
-            id: expectationId
-        )
-
-        // Reconstruct measure targets
-        let metricTargets = measureTargets.map { m in
-            let expectationMeasure = ExpectationMeasure(
-                expectationId: expectationId,
-                measureId: m.measureId,
-                targetValue: m.targetValue,
-                createdAt: m.createdAt,
-                freeformNotes: m.freeformNotes,
-                id: m.id
-            )
-
-            // Create measure with available data
-            let measure = Measure(
-                unit: m.measureUnit,
-                measureType: m.measureType,
-                title: m.measureTitle,
-                detailedDescription: nil,  // Not included in flat structure
-                freeformNotes: nil,         // Not included in flat structure
-                canonicalUnit: nil,         // Not included in flat structure
-                conversionFactor: nil,      // Not included in flat structure
-                logTime: m.createdAt,       // Use createdAt as fallback
-                id: m.measureId
-            )
-
-            return ExpectationMeasureWithMetric(
-                expectationMeasure: expectationMeasure,
-                measure: measure
-            )
-        }
-
-        // Reconstruct value alignments
-        let goalValueAlignments = self.valueAlignments.map { v in
-            let goalRelevance = GoalRelevance(
-                goalId: id,
-                valueId: v.valueId,
-                alignmentStrength: v.alignmentStrength,
-                relevanceNotes: v.relevanceNotes,
-                createdAt: v.createdAt,
-                id: v.id
-            )
-
-            // Create value with available data
-            let value = PersonalValue(
-                title: v.valueTitle,
-                detailedDescription: nil,   // Not included in flat structure
-                freeformNotes: nil,         // Not included in flat structure
-                priority: 5,                // Default priority
-                valueLevel: .general,       // Default level
-                lifeDomain: nil,            // Not included in flat structure
-                alignmentGuidance: nil,     // Not included in flat structure
-                logTime: v.createdAt,       // Use createdAt as fallback
-                id: v.valueId
-            )
-
-            return GoalRelevanceWithValue(
-                goalRelevance: goalRelevance,
-                value: value
-            )
-        }
-
-        // Reconstruct term assignment
-        let assignment = termAssignment.map { t in
-            TermGoalAssignment(
-                id: t.id,
-                termId: t.termId,
-                goalId: id,
-                assignmentOrder: t.assignmentOrder,
-                createdAt: t.createdAt
-            )
-        }
-
-        return GoalWithDetails(
-            goal: goal,
-            expectation: expectation,
-            metricTargets: metricTargets,
-            valueAlignments: goalValueAlignments,
-            termAssignment: assignment
-        )
-    }
-
     /// Convenience accessor for value IDs (for simple displays)
     public var alignedValueIds: [UUID] {
         valueAlignments.map { $0.valueId }

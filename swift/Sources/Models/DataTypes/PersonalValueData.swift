@@ -10,7 +10,6 @@
 // - ONE struct for all use cases (not 2+ separate types)
 // - Flat structure with PersonalValue fields + denormalized relationships
 // - Codable for direct JSON/CSV export
-// - .asValue extension for backward compatibility
 // - Simpler than GoalData/ActionData (fewer relationships)
 //
 
@@ -33,8 +32,10 @@ import Foundation
 /// // Export uses directly
 /// let json = try JSONEncoder().encode(values)
 ///
-/// // Views transform if they need legacy PersonalValue entity
-/// let entity = valueData.asValue
+/// // Views use directly (no transformation needed)
+/// List(values) { value in
+///     PersonalValueRow(value: value)
+/// }
 /// ```
 public struct PersonalValueData: Identifiable, Hashable, Sendable, Codable {
     // MARK: - Core Identity
@@ -86,42 +87,6 @@ public struct PersonalValueData: Identifiable, Hashable, Sendable, Codable {
         self.lifeDomain = lifeDomain
         self.alignmentGuidance = alignmentGuidance
         self.alignedGoalIds = alignedGoalIds
-    }
-}
-
-// MARK: - Convenience Transformations
-
-extension PersonalValueData {
-    /// Transform to PersonalValue entity for code that needs the entity type
-    ///
-    /// **When to use**: Coordinators, validators, or legacy code expecting PersonalValue
-    /// **When NOT to use**: Export, display, most list views (use PersonalValueData directly)
-    ///
-    /// **Note**: Reconstructs PersonalValue from denormalized data.
-    /// Loses relationship data (alignedGoalIds) since PersonalValue doesn't store those.
-    public var asValue: PersonalValue {
-        PersonalValue(
-            title: title,
-            detailedDescription: detailedDescription,
-            freeformNotes: freeformNotes,
-            priority: priority,
-            valueLevel: ValueLevel(rawValue: valueLevel) ?? .general,
-            lifeDomain: lifeDomain,
-            alignmentGuidance: alignmentGuidance,
-            logTime: logTime,
-            id: id
-        )
-    }
-
-    /// Convenience accessor for checking if this value has any aligned goals
-    public var hasAlignedGoals: Bool {
-        !alignedGoalIds.isEmpty
-    }
-
-    /// Convenience computed property for display priority
-    /// (matches export pattern - priority is already an Int)
-    public var displayPriority: Int {
-        priority
     }
 }
 

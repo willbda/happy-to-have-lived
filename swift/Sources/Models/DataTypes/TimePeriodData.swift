@@ -41,8 +41,10 @@ import Foundation
 /// // Export uses it directly
 /// let json = try JSONEncoder().encode(periods)
 ///
-/// // Views can transform if they need nested entities
-/// let withPeriods = periods.map { $0.asWithPeriod }
+/// // Views use directly (no transformation needed)
+/// List(periods) { period in
+///     TermRow(period: period)
+/// }
 /// ```
 public struct TimePeriodData: Identifiable, Hashable, Sendable, Codable {
 
@@ -97,39 +99,5 @@ extension TimePeriodData {
     public var termStatus: TermStatus? {
         guard let statusString = status else { return nil }
         return TermStatus(rawValue: statusString)
-    }
-}
-
-// MARK: - Backward Compatibility Transformation
-
-extension TimePeriodData {
-    /// Transform to TermWithPeriod for views that need nested entity structure
-    ///
-    /// **When to use**: SwiftUI views that bind to nested entities (GoalTerm, TimePeriod)
-    /// **When NOT to use**: Export, CSV formatting, most list views (use TimePeriodData directly)
-    ///
-    /// **Note**: This creates entities from the flat structure.
-    /// Full TimePeriod metadata (title, detailedDescription, notes, logTime) is included.
-    public var asWithPeriod: TermWithPeriod {
-        let term = GoalTerm(
-            timePeriodId: timePeriodId,
-            termNumber: termNumber,
-            theme: theme,
-            reflection: reflection,
-            status: termStatus,
-            id: id
-        )
-
-        let period = TimePeriod(
-            title: timePeriodTitle,
-            detailedDescription: nil,  // Not available in flat structure
-            freeformNotes: nil,         // Not available in flat structure
-            startDate: startDate,
-            endDate: endDate,
-            logTime: startDate,         // Use startDate as placeholder
-            id: timePeriodId
-        )
-
-        return TermWithPeriod(term: term, timePeriod: period)
     }
 }

@@ -1,6 +1,7 @@
 //
 // ProgressIndicator.swift
 // Written by Claude Code on 2025-11-03
+// Updated by Claude Code on 2025-11-16 - Migrated to canonical GoalData.MeasureTarget
 //
 // PURPOSE: Visual indicator for goal progress (multi-metric)
 // USAGE: Used in GoalRowView to show progress toward targets
@@ -19,7 +20,7 @@ import SwiftUI
 ///
 /// PATTERN: Reusable component for row and detail views
 public struct ProgressIndicator: View {
-    let metricTargets: [ExpectationMeasureWithMetric]
+    let measureTargets: [GoalData.MeasureTarget]
     let actualProgress: [UUID: Double]  // measureId -> actual value
     let displayMode: DisplayMode
 
@@ -29,25 +30,25 @@ public struct ProgressIndicator: View {
     }
 
     public init(
-        metricTargets: [ExpectationMeasureWithMetric],
+        measureTargets: [GoalData.MeasureTarget],
         actualProgress: [UUID: Double] = [:],
         displayMode: DisplayMode = .compact
     ) {
-        self.metricTargets = metricTargets
+        self.measureTargets = measureTargets
         self.actualProgress = actualProgress
         self.displayMode = displayMode
     }
 
     /// Calculate overall progress as average of all metrics
     private var overallProgress: Double {
-        guard !metricTargets.isEmpty else { return 0 }
+        guard !measureTargets.isEmpty else { return 0 }
 
-        let progressValues = metricTargets.compactMap { target -> Double? in
-            guard let actual = actualProgress[target.measure.id],
-                  target.expectationMeasure.targetValue > 0 else {
+        let progressValues = measureTargets.compactMap { target -> Double? in
+            guard let actual = actualProgress[target.measureId],
+                  target.targetValue > 0 else {
                 return nil
             }
-            return min(actual / target.expectationMeasure.targetValue, 1.0)
+            return min(actual / target.targetValue, 1.0)
         }
 
         guard !progressValues.isEmpty else { return 0 }
@@ -74,8 +75,8 @@ public struct ProgressIndicator: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if !metricTargets.isEmpty {
-                Text("(\(metricTargets.count) metric\(metricTargets.count == 1 ? "" : "s"))")
+            if !measureTargets.isEmpty {
+                Text("(\(measureTargets.count) metric\(measureTargets.count == 1 ? "" : "s"))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -101,10 +102,10 @@ public struct ProgressIndicator: View {
             }
 
             // Individual metric progress
-            ForEach(metricTargets, id: \.id) { target in
+            ForEach(measureTargets) { target in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(target.measure.title ?? target.measure.unit)
+                        Text(target.measureTitle ?? target.measureUnit)
                             .font(.subheadline)
                         Spacer()
                         progressText(for: target)
@@ -118,20 +119,20 @@ public struct ProgressIndicator: View {
     }
 
     /// Progress text for a specific metric
-    private func progressText(for target: ExpectationMeasureWithMetric) -> some View {
-        let actual = actualProgress[target.measure.id] ?? 0
-        let targetValue = target.expectationMeasure.targetValue
+    private func progressText(for target: GoalData.MeasureTarget) -> some View {
+        let actual = actualProgress[target.measureId] ?? 0
+        let targetValue = target.targetValue
         let percentage = targetValue > 0 ? Int(min(actual / targetValue, 1.0) * 100) : 0
 
-        return Text("\(actual, format: .number) / \(targetValue, format: .number) \(target.measure.unit) (\(percentage)%)")
+        return Text("\(actual, format: .number) / \(targetValue, format: .number) \(target.measureUnit) (\(percentage)%)")
             .font(.caption)
             .foregroundStyle(.secondary)
     }
 
     /// Calculate progress value for a specific metric (0.0 to 1.0)
-    private func progressValue(for target: ExpectationMeasureWithMetric) -> Double {
-        let actual = actualProgress[target.measure.id] ?? 0
-        let targetValue = target.expectationMeasure.targetValue
+    private func progressValue(for target: GoalData.MeasureTarget) -> Double {
+        let actual = actualProgress[target.measureId] ?? 0
+        let targetValue = target.targetValue
         guard targetValue > 0 else { return 0 }
         return min(actual / targetValue, 1.0)
     }
@@ -148,7 +149,7 @@ public struct ProgressIndicator: View {
     }
 
     /// Color based on individual metric progress
-    private func progressColor(for target: ExpectationMeasureWithMetric) -> Color {
+    private func progressColor(for target: GoalData.MeasureTarget) -> Color {
         let progress = progressValue(for: target)
         switch progress {
         case 0..<0.25: return .red
@@ -163,35 +164,42 @@ public struct ProgressIndicator: View {
 // MARK: - Previews
 
 #Preview("Compact Mode") {
-    VStack(spacing: 20) {
+    let measureId1 = UUID()
+    let measureId2 = UUID()
+
+    return VStack(spacing: 20) {
         ProgressIndicator(
-            metricTargets: [
-                ExpectationMeasureWithMetric(
-                    expectationMeasure: ExpectationMeasure(
-                        expectationId: UUID(),
-                        measureId: UUID(),
-                        targetValue: 120
-                    ),
-                    measure: Measure(unit: "km", measureType: "distance", title: "Distance")
+            measureTargets: [
+                GoalData.MeasureTarget(
+                    id: UUID(),
+                    measureId: measureId1,
+                    measureTitle: "Distance",
+                    measureUnit: "km",
+                    measureType: "distance",
+                    targetValue: 120,
+                    freeformNotes: nil,
+                    createdAt: Date()
                 ),
-                ExpectationMeasureWithMetric(
-                    expectationMeasure: ExpectationMeasure(
-                        expectationId: UUID(),
-                        measureId: UUID(),
-                        targetValue: 30
-                    ),
-                    measure: Measure(unit: "sessions", measureType: "count", title: "Sessions")
+                GoalData.MeasureTarget(
+                    id: UUID(),
+                    measureId: measureId2,
+                    measureTitle: "Sessions",
+                    measureUnit: "sessions",
+                    measureType: "count",
+                    targetValue: 30,
+                    freeformNotes: nil,
+                    createdAt: Date()
                 )
             ],
             actualProgress: [
-                UUID(): 87,  // 72.5% of 120km
-                UUID(): 18   // 60% of 30 sessions
+                measureId1: 87,  // 72.5% of 120km
+                measureId2: 18   // 60% of 30 sessions
             ],
             displayMode: .compact
         )
 
         ProgressIndicator(
-            metricTargets: [],
+            measureTargets: [],
             actualProgress: [:],
             displayMode: .compact
         )
@@ -200,28 +208,35 @@ public struct ProgressIndicator: View {
 }
 
 #Preview("Detailed Mode") {
-    ProgressIndicator(
-        metricTargets: [
-            ExpectationMeasureWithMetric(
-                expectationMeasure: ExpectationMeasure(
-                    expectationId: UUID(),
-                    measureId: UUID(),
-                    targetValue: 120
-                ),
-                measure: Measure(unit: "km", measureType: "distance", title: "Distance")
+    let measureId1 = UUID()
+    let measureId2 = UUID()
+
+    return ProgressIndicator(
+        measureTargets: [
+            GoalData.MeasureTarget(
+                id: UUID(),
+                measureId: measureId1,
+                measureTitle: "Distance",
+                measureUnit: "km",
+                measureType: "distance",
+                targetValue: 120,
+                freeformNotes: nil,
+                createdAt: Date()
             ),
-            ExpectationMeasureWithMetric(
-                expectationMeasure: ExpectationMeasure(
-                    expectationId: UUID(),
-                    measureId: UUID(),
-                    targetValue: 30
-                ),
-                measure: Measure(unit: "sessions", measureType: "count", title: "Sessions")
+            GoalData.MeasureTarget(
+                id: UUID(),
+                measureId: measureId2,
+                measureTitle: "Sessions",
+                measureUnit: "sessions",
+                measureType: "count",
+                targetValue: 30,
+                freeformNotes: nil,
+                createdAt: Date()
             )
         ],
         actualProgress: [
-            UUID(): 87,  // 72.5% of 120km
-            UUID(): 18   // 60% of 30 sessions
+            measureId1: 87,  // 72.5% of 120km
+            measureId2: 18   // 60% of 30 sessions
         ],
         displayMode: .detailed
     )

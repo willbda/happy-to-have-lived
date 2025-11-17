@@ -30,8 +30,10 @@ import Foundation
 /// // Export uses it directly
 /// let json = try JSONEncoder().encode(actions)
 ///
-/// // Views can transform if they need nested entities
-/// let details = actions.map { $0.asDetails }
+/// // Views use directly (no transformation needed)
+/// List(actions) { action in
+///     ActionRow(action: action)
+/// }
 /// ```
 public struct ActionData: Identifiable, Hashable, Sendable, Codable {
 
@@ -147,85 +149,5 @@ extension ActionData {
     /// Useful for CSV export or views that just need to show "Contributing to 3 goals"
     public var contributingGoalIds: [UUID] {
         contributions.map { $0.goalId }
-    }
-}
-
-// MARK: - Backward Compatibility Transformation
-
-extension ActionData {
-    /// Transform to ActionWithDetails for views that need nested entity structure
-    ///
-    /// **When to use**: SwiftUI views that bind to nested entities (ActionMeasurement, ActionContribution)
-    /// **When NOT to use**: Export, CSV formatting, most list views (use ActionData directly)
-    ///
-    /// **Note**: This creates placeholder entities:
-    /// - Measure: Only includes fields present in ActionData.Measurement (no detailedDescription, notes, etc.)
-    /// - Goal: Minimal placeholder with just ID and title (no expectation data, dates, etc.)
-    ///
-    /// If you need full Measure or Goal details, fetch them separately from repositories.
-    public var asDetails: ActionWithDetails {
-        let action = Action(
-            title: title,
-            detailedDescription: detailedDescription,
-            freeformNotes: freeformNotes,
-            durationMinutes: durationMinutes,
-            startTime: startTime,
-            logTime: logTime,
-            id: id
-        )
-
-        let actionMeasurements = measurements.map { m in
-            let measuredAction = MeasuredAction(
-                actionId: id,
-                measureId: m.measureId,
-                value: m.value,
-                createdAt: m.createdAt,
-                id: m.id
-            )
-
-            let measure = Measure(
-                unit: m.measureUnit,
-                measureType: m.measureType,
-                title: m.measureTitle,
-                detailedDescription: nil,       // Not available in flat structure
-                freeformNotes: nil,             // Not available in flat structure
-                canonicalUnit: nil,             // Not available in flat structure
-                conversionFactor: nil,          // Not available in flat structure
-                logTime: m.createdAt,           // Use createdAt as placeholder
-                id: m.measureId
-            )
-
-            return ActionMeasurement(measuredAction: measuredAction, measure: measure)
-        }
-
-        let actionContributions = contributions.map { c in
-            let contribution = ActionGoalContribution(
-                actionId: id,
-                goalId: c.goalId,
-                contributionAmount: c.contributionAmount,
-                measureId: c.measureId,
-                createdAt: c.createdAt,
-                id: c.id
-            )
-
-            // Placeholder goal (just ID - no expectation data)
-            // If view needs full Goal details, it should fetch from GoalRepository
-            let goal = Goal(
-                expectationId: UUID(),          // Placeholder
-                startDate: nil,
-                targetDate: nil,
-                actionPlan: nil,
-                expectedTermLength: nil,
-                id: c.goalId
-            )
-
-            return ActionContribution(contribution: contribution, goal: goal)
-        }
-
-        return ActionWithDetails(
-            action: action,
-            measurements: actionMeasurements,
-            contributions: actionContributions
-        )
     }
 }

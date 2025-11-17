@@ -98,9 +98,6 @@ public struct GoalCoachView: View {
             .padding()
         }
         .navigationTitle("Goal Coach")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Done") {
@@ -158,17 +155,9 @@ struct MessageBubble: View {
         case .user:
             return .blue
         case .assistant:
-            #if os(macOS)
-            return Color(nsColor: .systemGray).opacity(0.3)
-            #else
-            return Color(uiColor: .systemGray5)
-            #endif
+            return .secondary.opacity(0.15)
         case .system:
-            #if os(macOS)
-            return Color(nsColor: .systemGray).opacity(0.2)
-            #else
-            return Color(uiColor: .systemGray6)
-            #endif
+            return .secondary.opacity(0.08)
         }
     }
 

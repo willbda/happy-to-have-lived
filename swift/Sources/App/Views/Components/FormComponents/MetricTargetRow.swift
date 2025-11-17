@@ -168,9 +168,6 @@ public struct MetricTargetRow: View {
             }
         }
         .navigationTitle("New Measure")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)  // iOS: Compact title style in modal
-        #endif
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {

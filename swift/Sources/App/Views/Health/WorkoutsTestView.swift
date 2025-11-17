@@ -28,6 +28,8 @@ import Services
 public struct WorkoutsTestView: View {
     // Don't use @State for singleton - just observe it directly
     // HealthKitManager is @Observable, so SwiftUI will track changes automatically
+
+    @Environment(\.openURL) private var openURL
     private let healthManager = HealthKitManager.shared
 
     @State private var selectedDate: Date = Date()
@@ -55,7 +57,7 @@ public struct WorkoutsTestView: View {
             )
             .datePickerStyle(.automatic)
             .padding()
-            .background(Color(.systemGroupedBackground))
+            .background(.background.secondary)
             .onChange(of: selectedDate) { _, newDate in
                 Task {
                     await loadWorkouts(for: newDate)
@@ -243,7 +245,7 @@ public struct WorkoutsTestView: View {
                 Button {
                     // Open Settings
                     if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
+                        openURL(url)
                     }
                 } label: {
                     Label("Open Settings", systemImage: "gearshape")

@@ -15,9 +15,9 @@
 //
 
 import Foundation
+import GRDB  // For FetchableRecord protocol
 import Models  // For EmbeddingVector, EmbeddingCacheEntry, SemanticConfiguration
 import SQLiteData
-import GRDB  // For FetchableRecord protocol
 
 /// Repository for managing cached semantic embeddings
 /// Follows the established repository pattern with Sendable conformance
@@ -42,11 +42,11 @@ public final class EmbeddingCacheRepository: Sendable {
     ) async throws -> EmbeddingCacheEntry? {
         try await database.read { db in
             var sql = """
-                SELECT id, entityType, entityId, textHash, sourceText,
-                       embedding, embeddingModel, dimensionality, generatedAt, logTime
-                FROM semanticEmbeddings
-                WHERE entityType = ? AND entityId = ?
-            """
+                    SELECT id, entityType, entityId, textHash, sourceText,
+                           embedding, embeddingModel, dimensionality, generatedAt, logTime
+                    FROM semanticEmbeddings
+                    WHERE entityType = ? AND entityId = ?
+                """
 
             var arguments: [any DatabaseValueConvertible] = [entityType, entityId.uuidString]
 
@@ -58,7 +58,10 @@ public final class EmbeddingCacheRepository: Sendable {
 
             sql += " ORDER BY generatedAt DESC LIMIT 1"
 
-            guard let row = try EmbeddingCacheRow.fetchOne(db, sql: sql, arguments: StatementArguments(arguments)) else {
+            guard
+                let row = try EmbeddingCacheRow.fetchOne(
+                    db, sql: sql, arguments: StatementArguments(arguments))
+            else {
                 return nil
             }
 
@@ -71,12 +74,12 @@ public final class EmbeddingCacheRepository: Sendable {
     public func fetchAllByType(_ entityType: String) async throws -> [EmbeddingCacheEntry] {
         try await database.read { db in
             let sql = """
-                SELECT id, entityType, entityId, textHash, sourceText,
-                       embedding, embeddingModel, dimensionality, generatedAt, logTime
-                FROM semanticEmbeddings
-                WHERE entityType = ?
-                ORDER BY generatedAt DESC
-            """
+                    SELECT id, entityType, entityId, textHash, sourceText,
+                           embedding, embeddingModel, dimensionality, generatedAt, logTime
+                    FROM semanticEmbeddings
+                    WHERE entityType = ?
+                    ORDER BY generatedAt DESC
+                """
 
             let rows = try EmbeddingCacheRow.fetchAll(db, sql: sql, arguments: [entityType])
             return try rows.compactMap { try self.mapRowToEntry($0) }
@@ -93,16 +96,17 @@ public final class EmbeddingCacheRepository: Sendable {
         return try await database.read { db in
             let placeholders = Array(repeating: "?", count: entityIds.count).joined(separator: ", ")
             let sql = """
-                SELECT id, entityType, entityId, textHash, sourceText,
-                       embedding, embeddingModel, dimensionality, generatedAt, logTime
-                FROM semanticEmbeddings
-                WHERE entityType = ? AND entityId IN (\(placeholders))
-            """
+                    SELECT id, entityType, entityId, textHash, sourceText,
+                           embedding, embeddingModel, dimensionality, generatedAt, logTime
+                    FROM semanticEmbeddings
+                    WHERE entityType = ? AND entityId IN (\(placeholders))
+                """
 
             var arguments: [any DatabaseValueConvertible] = [entityType]
             arguments.append(contentsOf: entityIds.map { $0.uuidString })
 
-            let rows = try EmbeddingCacheRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            let rows = try EmbeddingCacheRow.fetchAll(
+                db, sql: sql, arguments: StatementArguments(arguments))
 
             var result: [UUID: EmbeddingCacheEntry] = [:]
             for row in rows {
@@ -120,17 +124,17 @@ public final class EmbeddingCacheRepository: Sendable {
     public func storeEmbedding(_ entry: EmbeddingCacheEntry) async throws {
         try await database.write { db in
             let sql = """
-                INSERT OR REPLACE INTO semanticEmbeddings (
-                    id, entityType, entityId, textHash, sourceText,
-                    embedding, embeddingModel, dimensionality,
-                    generatedAt, logTime
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
+                    INSERT OR REPLACE INTO semanticEmbeddings (
+                        id, entityType, entityId, textHash, sourceText,
+                        embedding, embeddingModel, dimensionality,
+                        generatedAt, logTime
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
 
             try db.execute(
                 sql: sql,
                 arguments: [
-                    entry.id.uuidString,
+                    entry.id.uuidString.lowercased(),
                     entry.entityType,
                     entry.entityId.uuidString,
                     entry.textHash,
@@ -139,7 +143,7 @@ public final class EmbeddingCacheRepository: Sendable {
                     entry.embeddingModel,
                     entry.dimensionality,
                     entry.generatedAt.ISO8601Format(),
-                    entry.logTime.ISO8601Format()
+                    entry.logTime.ISO8601Format(),
                 ]
             )
         }
@@ -151,18 +155,18 @@ public final class EmbeddingCacheRepository: Sendable {
 
         try await database.write { db in
             let sql = """
-                INSERT OR REPLACE INTO semanticEmbeddings (
-                    id, entityType, entityId, textHash, sourceText,
-                    embedding, embeddingModel, dimensionality,
-                    generatedAt, logTime
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
+                    INSERT OR REPLACE INTO semanticEmbeddings (
+                        id, entityType, entityId, textHash, sourceText,
+                        embedding, embeddingModel, dimensionality,
+                        generatedAt, logTime
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
 
             for entry in entries {
                 try db.execute(
                     sql: sql,
                     arguments: [
-                        entry.id.uuidString,
+                        entry.id.uuidString.lowercased(),
                         entry.entityType,
                         entry.entityId.uuidString,
                         entry.textHash,
@@ -171,7 +175,7 @@ public final class EmbeddingCacheRepository: Sendable {
                         entry.embeddingModel,
                         entry.dimensionality,
                         entry.generatedAt.ISO8601Format(),
-                        entry.logTime.ISO8601Format()
+                        entry.logTime.ISO8601Format(),
                     ]
                 )
             }
@@ -185,9 +189,9 @@ public final class EmbeddingCacheRepository: Sendable {
     public func invalidateCache(entityType: String, entityId: UUID) async throws {
         try await database.write { db in
             let sql = """
-                DELETE FROM semanticEmbeddings
-                WHERE entityType = ? AND entityId = ?
-            """
+                    DELETE FROM semanticEmbeddings
+                    WHERE entityType = ? AND entityId = ?
+                """
             try db.execute(sql: sql, arguments: [entityType, entityId.uuidString])
         }
     }
@@ -197,9 +201,9 @@ public final class EmbeddingCacheRepository: Sendable {
     public func invalidateCacheForType(_ entityType: String) async throws {
         try await database.write { db in
             let sql = """
-                DELETE FROM semanticEmbeddings
-                WHERE entityType = ?
-            """
+                    DELETE FROM semanticEmbeddings
+                    WHERE entityType = ?
+                """
             try db.execute(sql: sql, arguments: [entityType])
         }
     }
@@ -209,9 +213,9 @@ public final class EmbeddingCacheRepository: Sendable {
     public func invalidateOlderThan(_ date: Date) async throws {
         try await database.write { db in
             let sql = """
-                DELETE FROM semanticEmbeddings
-                WHERE generatedAt < ?
-            """
+                    DELETE FROM semanticEmbeddings
+                    WHERE generatedAt < ?
+                """
             try db.execute(sql: sql, arguments: [date.ISO8601Format()])
         }
     }
@@ -224,34 +228,34 @@ public final class EmbeddingCacheRepository: Sendable {
         try await database.write { db in
             // Clean up orphaned goal embeddings
             var sql = """
-                DELETE FROM semanticEmbeddings
-                WHERE entityType = 'goal'
-                  AND entityId NOT IN (SELECT id FROM goals)
-            """
+                    DELETE FROM semanticEmbeddings
+                    WHERE entityType = 'goal'
+                      AND entityId NOT IN (SELECT id FROM goals)
+                """
             try db.execute(sql: sql)
 
             // Clean up orphaned action embeddings
             sql = """
-                DELETE FROM semanticEmbeddings
-                WHERE entityType = 'action'
-                  AND entityId NOT IN (SELECT id FROM actions)
-            """
+                    DELETE FROM semanticEmbeddings
+                    WHERE entityType = 'action'
+                      AND entityId NOT IN (SELECT id FROM actions)
+                """
             try db.execute(sql: sql)
 
             // Clean up orphaned value embeddings
             sql = """
-                DELETE FROM semanticEmbeddings
-                WHERE entityType = 'value'
-                  AND entityId NOT IN (SELECT id FROM personalValues)
-            """
+                    DELETE FROM semanticEmbeddings
+                    WHERE entityType = 'value'
+                      AND entityId NOT IN (SELECT id FROM personalValues)
+                """
             try db.execute(sql: sql)
 
             // Clean up orphaned measure embeddings
             sql = """
-                DELETE FROM semanticEmbeddings
-                WHERE entityType = 'measure'
-                  AND entityId NOT IN (SELECT id FROM measures)
-            """
+                    DELETE FROM semanticEmbeddings
+                    WHERE entityType = 'measure'
+                      AND entityId NOT IN (SELECT id FROM measures)
+                """
             try db.execute(sql: sql)
         }
     }
@@ -260,15 +264,15 @@ public final class EmbeddingCacheRepository: Sendable {
     public func getStatistics() async throws -> CacheStatistics {
         try await database.read { db in
             let sql = """
-                SELECT
-                    entityType,
-                    COUNT(*) as count,
-                    MIN(generatedAt) as oldestDate,
-                    MAX(generatedAt) as newestDate,
-                    AVG(dimensionality) as avgDimensionality
-                FROM semanticEmbeddings
-                GROUP BY entityType
-            """
+                    SELECT
+                        entityType,
+                        COUNT(*) as count,
+                        MIN(generatedAt) as oldestDate,
+                        MAX(generatedAt) as newestDate,
+                        AVG(dimensionality) as avgDimensionality
+                    FROM semanticEmbeddings
+                    GROUP BY entityType
+                """
 
             let rows = try StatisticsRow.fetchAll(db, sql: sql)
 
@@ -305,16 +309,17 @@ public final class EmbeddingCacheRepository: Sendable {
     ) async throws -> Bool {
         try await database.read { db in
             let sql = """
-                SELECT COUNT(*) as count
-                FROM semanticEmbeddings
-                WHERE entityType = ? AND entityId = ? AND textHash = ?
-            """
+                    SELECT COUNT(*) as count
+                    FROM semanticEmbeddings
+                    WHERE entityType = ? AND entityId = ? AND textHash = ?
+                """
 
-            let count = try Int.fetchOne(
-                db,
-                sql: sql,
-                arguments: [entityType, entityId.uuidString, textHash]
-            ) ?? 0
+            let count =
+                try Int.fetchOne(
+                    db,
+                    sql: sql,
+                    arguments: [entityType, entityId.uuidString, textHash]
+                ) ?? 0
 
             return count > 0
         }
@@ -325,15 +330,18 @@ public final class EmbeddingCacheRepository: Sendable {
     /// Map a database row to an EmbeddingCacheEntry
     private func mapRowToEntry(_ row: EmbeddingCacheRow) throws -> EmbeddingCacheEntry? {
         guard let id = UUID(uuidString: row.id),
-              let entityId = UUID(uuidString: row.entityId),
-              let generatedAt = ISO8601DateFormatter().date(from: row.generatedAt),
-              let logTime = ISO8601DateFormatter().date(from: row.logTime) else {
+            let entityId = UUID(uuidString: row.entityId),
+            let generatedAt = ISO8601DateFormatter().date(from: row.generatedAt),
+            let logTime = ISO8601DateFormatter().date(from: row.logTime)
+        else {
             return nil
         }
 
         // Validate embedding data can be deserialized to EmbeddingVector
         guard EmbeddingVector(from: row.embedding) != nil else {
-            print("⚠️ EmbeddingCacheRepository: Failed to decode embedding vector for entity \(row.entityType):\(row.entityId)")
+            print(
+                "⚠️ EmbeddingCacheRepository: Failed to decode embedding vector for entity \(row.entityType):\(row.entityId)"
+            )
             return nil
         }
 

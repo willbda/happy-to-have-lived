@@ -15,8 +15,8 @@
 //
 
 import Foundation
-import SQLiteData
 import GRDB  // For Row type in raw SQL queries
+import SQLiteData
 
 /// Repository for managing LLM conversation data
 /// Handles both conversation headers and individual messages
@@ -43,11 +43,11 @@ public final class ConversationRepository: Sendable {
 
         try await database.write { db in
             let sql = """
-                INSERT INTO llmConversations (
-                    id, userId, conversationType, startedAt, lastMessageAt,
-                    sessionNumber, status, logTime
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """
+                    INSERT INTO llmConversations (
+                        id, userId, conversationType, startedAt, lastMessageAt,
+                        sessionNumber, status, logTime
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """
 
             try db.execute(
                 sql: sql,
@@ -59,7 +59,7 @@ public final class ConversationRepository: Sendable {
                     now.ISO8601Format(),
                     1,
                     "active",
-                    now.ISO8601Format()
+                    now.ISO8601Format(),
                 ]
             )
         }
@@ -79,13 +79,14 @@ public final class ConversationRepository: Sendable {
     public func fetchConversation(_ id: UUID) async throws -> ConversationHeader? {
         try await database.read { db in
             let sql = """
-                SELECT id, userId, conversationType, startedAt, lastMessageAt,
-                       sessionNumber, status, logTime
-                FROM llmConversations
-                WHERE id = ?
-            """
+                    SELECT id, userId, conversationType, startedAt, lastMessageAt,
+                           sessionNumber, status, logTime
+                    FROM llmConversations
+                    WHERE id = ?
+                """
 
-            guard let row = try Row.fetchOne(db, sql: sql, arguments: [id.uuidString]) else {
+            guard let row = try Row.fetchOne(db, sql: sql, arguments: [id.uuidString.lowercased()])
+            else {
                 return nil
             }
 
@@ -100,11 +101,11 @@ public final class ConversationRepository: Sendable {
     ) async throws -> [ConversationHeader] {
         try await database.read { db in
             var sql = """
-                SELECT id, userId, conversationType, startedAt, lastMessageAt,
-                       sessionNumber, status, logTime
-                FROM llmConversations
-                WHERE userId = ? AND status = 'active'
-            """
+                    SELECT id, userId, conversationType, startedAt, lastMessageAt,
+                           sessionNumber, status, logTime
+                    FROM llmConversations
+                    WHERE userId = ? AND status = 'active'
+                """
 
             var arguments: [DatabaseValueConvertible] = [userId]
 
@@ -124,11 +125,11 @@ public final class ConversationRepository: Sendable {
     public func archiveConversation(_ id: UUID) async throws {
         try await database.write { db in
             let sql = """
-                UPDATE llmConversations
-                SET status = 'archived'
-                WHERE id = ?
-            """
-            try db.execute(sql: sql, arguments: [id.uuidString])
+                    UPDATE llmConversations
+                    SET status = 'archived'
+                    WHERE id = ?
+                """
+            try db.execute(sql: sql, arguments: [id.uuidString.lowercased()])
         }
     }
 
@@ -137,10 +138,10 @@ public final class ConversationRepository: Sendable {
         let now = Date()
         try await database.write { db in
             let sql = """
-                UPDATE llmConversations
-                SET lastMessageAt = ?
-                WHERE id = ?
-            """
+                    UPDATE llmConversations
+                    SET lastMessageAt = ?
+                    WHERE id = ?
+                """
             try db.execute(sql: sql, arguments: [now.ISO8601Format(), conversationId.uuidString])
         }
     }
@@ -150,22 +151,23 @@ public final class ConversationRepository: Sendable {
         try await database.write { db in
             // Get current session number
             let fetchSql = """
-                SELECT sessionNumber FROM llmConversations WHERE id = ?
-            """
-            let currentSession = try Int.fetchOne(
-                db,
-                sql: fetchSql,
-                arguments: [conversationId.uuidString]
-            ) ?? 1
+                    SELECT sessionNumber FROM llmConversations WHERE id = ?
+                """
+            let currentSession =
+                try Int.fetchOne(
+                    db,
+                    sql: fetchSql,
+                    arguments: [conversationId.uuidString]
+                ) ?? 1
 
             let newSession = currentSession + 1
 
             // Update session number
             let updateSql = """
-                UPDATE llmConversations
-                SET sessionNumber = ?
-                WHERE id = ?
-            """
+                    UPDATE llmConversations
+                    SET sessionNumber = ?
+                    WHERE id = ?
+                """
             try db.execute(
                 sql: updateSql,
                 arguments: [newSession, conversationId.uuidString]
@@ -191,11 +193,11 @@ public final class ConversationRepository: Sendable {
 
         try await database.write { db in
             let sql = """
-                INSERT INTO llmMessages (
-                    id, conversationId, role, content, structuredDataJSON,
-                    toolName, timestamp, sessionNumber, isArchived
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
+                    INSERT INTO llmMessages (
+                        id, conversationId, role, content, structuredDataJSON,
+                        toolName, timestamp, sessionNumber, isArchived
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
 
             try db.execute(
                 sql: sql,
@@ -208,7 +210,7 @@ public final class ConversationRepository: Sendable {
                     toolName,
                     now.ISO8601Format(),
                     sessionNumber,
-                    0
+                    0,
                 ]
             )
         }
@@ -233,12 +235,12 @@ public final class ConversationRepository: Sendable {
     public func fetchActiveMessages(_ conversationId: UUID) async throws -> [ConversationMessage] {
         try await database.read { db in
             let sql = """
-                SELECT id, conversationId, role, content, structuredDataJSON,
-                       toolName, timestamp, sessionNumber, isArchived
-                FROM llmMessages
-                WHERE conversationId = ? AND isArchived = 0
-                ORDER BY timestamp ASC
-            """
+                    SELECT id, conversationId, role, content, structuredDataJSON,
+                           toolName, timestamp, sessionNumber, isArchived
+                    FROM llmMessages
+                    WHERE conversationId = ? AND isArchived = 0
+                    ORDER BY timestamp ASC
+                """
 
             let rows = try Row.fetchAll(db, sql: sql, arguments: [conversationId.uuidString])
             return try rows.compactMap { try mapRowToMessage($0) }
@@ -252,12 +254,12 @@ public final class ConversationRepository: Sendable {
     ) async throws -> [ConversationMessage] {
         try await database.read { db in
             let sql = """
-                SELECT id, conversationId, role, content, structuredDataJSON,
-                       toolName, timestamp, sessionNumber, isArchived
-                FROM llmMessages
-                WHERE conversationId = ? AND sessionNumber = ?
-                ORDER BY timestamp ASC
-            """
+                    SELECT id, conversationId, role, content, structuredDataJSON,
+                           toolName, timestamp, sessionNumber, isArchived
+                    FROM llmMessages
+                    WHERE conversationId = ? AND sessionNumber = ?
+                    ORDER BY timestamp ASC
+                """
 
             let rows = try Row.fetchAll(
                 db,
@@ -275,10 +277,10 @@ public final class ConversationRepository: Sendable {
     ) async throws -> Int {
         try await database.write { db in
             let sql = """
-                UPDATE llmMessages
-                SET isArchived = 1
-                WHERE conversationId = ? AND sessionNumber < ?
-            """
+                    UPDATE llmMessages
+                    SET isArchived = 1
+                    WHERE conversationId = ? AND sessionNumber < ?
+                """
 
             let statement = try db.makeStatement(sql: sql)
             try statement.setArguments([conversationId.uuidString, sessionNumber])
@@ -295,9 +297,9 @@ public final class ConversationRepository: Sendable {
     ) async throws -> Int {
         try await database.read { db in
             var sql = """
-                SELECT COUNT(*) FROM llmMessages
-                WHERE conversationId = ?
-            """
+                    SELECT COUNT(*) FROM llmMessages
+                    WHERE conversationId = ?
+                """
 
             var arguments: [DatabaseValueConvertible] = [conversationId.uuidString]
 
@@ -343,9 +345,9 @@ public final class ConversationRepository: Sendable {
     public func deleteArchivedConversationsOlderThan(_ date: Date) async throws -> Int {
         try await database.write { db in
             let sql = """
-                DELETE FROM llmConversations
-                WHERE status = 'archived' AND lastMessageAt < ?
-            """
+                    DELETE FROM llmConversations
+                    WHERE status = 'archived' AND lastMessageAt < ?
+                """
 
             let statement = try db.makeStatement(sql: sql)
             try statement.setArguments([date.ISO8601Format()])
@@ -360,15 +362,15 @@ public final class ConversationRepository: Sendable {
         try await database.read { db in
             // Count by type and status
             let sql = """
-                SELECT
-                    conversationType,
-                    status,
-                    COUNT(*) as count,
-                    MAX(lastMessageAt) as lastActivity
-                FROM llmConversations
-                WHERE userId = ?
-                GROUP BY conversationType, status
-            """
+                    SELECT
+                        conversationType,
+                        status,
+                        COUNT(*) as count,
+                        MAX(lastMessageAt) as lastActivity
+                    FROM llmConversations
+                    WHERE userId = ?
+                    GROUP BY conversationType, status
+                """
 
             let rows = try Row.fetchAll(db, sql: sql, arguments: [userId])
 
@@ -391,7 +393,8 @@ public final class ConversationRepository: Sendable {
                 byType[type, default: 0] += count
 
                 if let lastActivityStr = row["lastActivity"] as? String,
-                   let date = ISO8601DateFormatter().date(from: lastActivityStr) {
+                    let date = ISO8601DateFormatter().date(from: lastActivityStr)
+                {
                     if lastActivity == nil || date > lastActivity! {
                         lastActivity = date
                     }
@@ -400,16 +403,17 @@ public final class ConversationRepository: Sendable {
 
             // Count total messages
             let messageSql = """
-                SELECT COUNT(*) FROM llmMessages
-                WHERE conversationId IN (
-                    SELECT id FROM llmConversations WHERE userId = ?
-                )
-            """
-            let totalMessages = try Int.fetchOne(
-                db,
-                sql: messageSql,
-                arguments: [userId]
-            ) ?? 0
+                    SELECT COUNT(*) FROM llmMessages
+                    WHERE conversationId IN (
+                        SELECT id FROM llmConversations WHERE userId = ?
+                    )
+                """
+            let totalMessages =
+                try Int.fetchOne(
+                    db,
+                    sql: messageSql,
+                    arguments: [userId]
+                ) ?? 0
 
             return ConversationStatistics(
                 totalConversations: totalConversations,
@@ -425,17 +429,18 @@ public final class ConversationRepository: Sendable {
 
     private func mapRowToConversation(_ row: Row) throws -> ConversationHeader? {
         guard let idString = row["id"] as? String,
-              let id = UUID(uuidString: idString),
-              let userId = row["userId"] as? String,
-              let typeString = row["conversationType"] as? String,
-              let conversationType = ConversationType(rawValue: typeString),
-              let startedAtString = row["startedAt"] as? String,
-              let startedAt = ISO8601DateFormatter().date(from: startedAtString),
-              let lastMessageAtString = row["lastMessageAt"] as? String,
-              let lastMessageAt = ISO8601DateFormatter().date(from: lastMessageAtString),
-              let sessionNumber = row["sessionNumber"] as? Int,
-              let statusString = row["status"] as? String,
-              let status = ConversationStatus(rawValue: statusString) else {
+            let id = UUID(uuidString: idString),
+            let userId = row["userId"] as? String,
+            let typeString = row["conversationType"] as? String,
+            let conversationType = ConversationType(rawValue: typeString),
+            let startedAtString = row["startedAt"] as? String,
+            let startedAt = ISO8601DateFormatter().date(from: startedAtString),
+            let lastMessageAtString = row["lastMessageAt"] as? String,
+            let lastMessageAt = ISO8601DateFormatter().date(from: lastMessageAtString),
+            let sessionNumber = row["sessionNumber"] as? Int,
+            let statusString = row["status"] as? String,
+            let status = ConversationStatus(rawValue: statusString)
+        else {
             return nil
         }
 
@@ -452,16 +457,17 @@ public final class ConversationRepository: Sendable {
 
     private func mapRowToMessage(_ row: Row) throws -> ConversationMessage? {
         guard let idString = row["id"] as? String,
-              let id = UUID(uuidString: idString),
-              let conversationIdString = row["conversationId"] as? String,
-              let conversationId = UUID(uuidString: conversationIdString),
-              let roleString = row["role"] as? String,
-              let role = MessageRole(rawValue: roleString),
-              let content = row["content"] as? String,
-              let timestampString = row["timestamp"] as? String,
-              let timestamp = ISO8601DateFormatter().date(from: timestampString),
-              let sessionNumber = row["sessionNumber"] as? Int,
-              let isArchived = row["isArchived"] as? Int else {
+            let id = UUID(uuidString: idString),
+            let conversationIdString = row["conversationId"] as? String,
+            let conversationId = UUID(uuidString: conversationIdString),
+            let roleString = row["role"] as? String,
+            let role = MessageRole(rawValue: roleString),
+            let content = row["content"] as? String,
+            let timestampString = row["timestamp"] as? String,
+            let timestamp = ISO8601DateFormatter().date(from: timestampString),
+            let sessionNumber = row["sessionNumber"] as? Int,
+            let isArchived = row["isArchived"] as? Int
+        else {
             return nil
         }
 

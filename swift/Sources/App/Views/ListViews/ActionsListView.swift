@@ -95,8 +95,7 @@ public struct ActionsListView: View {
         }
         .sheet(item: $actionToEdit) { actionData in
             NavigationStack {
-                // Transform ActionData to ActionWithDetails for form view
-                ActionFormView(actionToEdit: actionData.asDetails)
+                ActionFormView(actionToEdit: actionData)
             }
         }
         .onChange(of: actionToEdit) { oldValue, newValue in
@@ -152,23 +151,22 @@ public struct ActionsListView: View {
         List(selection: $selectedAction) {
             // Quick Add Section
             QuickAddSection(
-                recentActions: Array(viewModel.actions.prefix(5).map { $0.asDetails }),
+                recentActions: Array(viewModel.actions.prefix(5)),
                 activeGoals: Array(viewModel.activeGoals.prefix(5)),
                 onDuplicateAction: { preFilledData in
                     formData = preFilledData
                     showingAddAction = true
                 },
-                onLogActionForGoal: { goalDetail in
+                onLogActionForGoal: { goalData in
                     // Pre-fill form with goal's first metric
-                    formData = buildFormDataForGoal(goalDetail)
+                    formData = buildFormDataForGoal(goalData)
                     showingAddAction = true
                 }
             )
 
             // Actions List
             ForEach(viewModel.actions) { actionData in
-                // Transform ActionData to ActionWithDetails for row view
-                ActionRowView(actionDetails: actionData.asDetails)
+                ActionRowView(action: actionData)
                     .onTapGesture {
                         edit(actionData)
                     }
@@ -234,11 +232,11 @@ public struct ActionsListView: View {
     ///
     /// Pre-fills form with goal's first metric target (if any)
     /// and pre-selects the goal for contribution tracking
-    private func buildFormDataForGoal(_ goalDetail: Models.GoalWithDetails) -> ActionFormData {
-        // Pre-fill with goal's first metric (if any)
-        let measurements: [MeasurementInput] = goalDetail.metricTargets.prefix(1).map { target in
+    private func buildFormDataForGoal(_ goalData: Models.GoalData) -> ActionFormData {
+        // Pre-fill with goal's first metric (if any) - using flat GoalData.MeasureTarget
+        let measurements: [MeasurementInput] = goalData.measureTargets.prefix(1).map { target in
             MeasurementInput(
-                measureId: target.measure.id,
+                measureId: target.measureId,
                 value: 0  // User will enter actual value
             )
         }
@@ -246,7 +244,7 @@ public struct ActionsListView: View {
         return ActionFormData(
             title: "",  // User will enter title
             measurements: measurements,
-            goalContributions: [goalDetail.goal.id]  // Pre-select this goal
+            goalContributions: [goalData.id]  // Pre-select this goal
         )
     }
 }

@@ -60,7 +60,7 @@ public final class ActionsListViewModel {
     var actions: [Models.ActionData] = []
 
     /// Active goals for Quick Add section (goals with no target date or future target date)
-    var activeGoals: [Models.GoalWithDetails] = []
+    var activeGoals: [Models.GoalData] = []
 
     /// Loading state for UI feedback
     var isLoading: Bool = false
@@ -89,8 +89,8 @@ public final class ActionsListViewModel {
 
     /// Repository for goal data access (for Quick Add active goals)
     @ObservationIgnored
-    private lazy var goalRepository: GoalRepository = {
-        GoalRepository(database: database)
+    private lazy var goalRepository: GoalRepository_v3 = {
+        GoalRepository_v3(database: database)
     }()
 
     // MARK: - Initialization
@@ -153,16 +153,9 @@ public final class ActionsListViewModel {
         errorMessage = nil
 
         do {
-            // Transform ActionData to entities for coordinator
-            // Coordinator expects separate entity parameters for atomic delete
-            let details = actionData.asDetails
-
+            // Use coordinator for atomic delete with cascading relationships
             let coordinator = ActionCoordinator(database: database)
-            try await coordinator.delete(
-                action: details.action,
-                measurements: details.measurements.map(\.measuredAction),
-                contributions: details.contributions.map(\.contribution)
-            )
+            try await coordinator.delete(actionData)
 
             // Reload list after successful delete
             await loadActions()

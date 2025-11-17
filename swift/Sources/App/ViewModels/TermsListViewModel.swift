@@ -134,15 +134,9 @@ public final class TermsListViewModel {
         errorMessage = nil
 
         do {
-            // Transform TimePeriodData to entities for coordinator
-            let termWithPeriod = termData.asWithPeriod
-
             // Use coordinator for atomic delete
             let coordinator = TimePeriodCoordinator(database: database)
-            try await coordinator.delete(
-                timePeriod: termWithPeriod.timePeriod,
-                goalTerm: termWithPeriod.term
-            )
+            try await coordinator.delete(termData)
 
             // Reload list after successful delete
             await loadTerms()

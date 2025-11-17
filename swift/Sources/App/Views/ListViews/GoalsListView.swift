@@ -56,7 +56,7 @@ public struct GoalsListView: View {
                 // Goal list
                 List {
                     ForEach(viewModel.goals) { goalData in
-                        GoalRowView(goalDetails: goalData.asDetails)
+                        GoalRowView(goal: goalData)
                             .onTapGesture {
                                 goalToEdit = goalData
                             }
@@ -116,7 +116,7 @@ public struct GoalsListView: View {
         }
         .sheet(item: $goalToEdit) { goalData in
             NavigationStack {
-                GoalFormView(goalToEdit: goalData.asDetails)
+                GoalFormView(goalToEdit: goalData)
             }
         }
         .alert("Delete Goal?", isPresented: $showingDeleteAlert, presenting: goalToDelete) { goalData in

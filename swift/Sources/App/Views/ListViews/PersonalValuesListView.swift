@@ -21,8 +21,7 @@ import SwiftUI
 //
 // CANONICAL PATTERN (2025-11-16):
 // - ViewModel stores PersonalValueData (canonical type)
-// - Transform to PersonalValue at display boundary (via .asValue)
-// - Child views (RowView, FormView) still use PersonalValue
+// - Child views (RowView, FormView) accept PersonalValueData directly
 //
 
 public struct PersonalValuesListView: View {
@@ -62,8 +61,7 @@ public struct PersonalValuesListView: View {
                         if let levelValues = viewModel.groupedValues[level.rawValue], !levelValues.isEmpty {
                             Section(level.displayName) {
                                 ForEach(levelValues) { valueData in
-                                    // Transform canonical type to entity for row view
-                                    PersonalValuesRowView(value: valueData.asValue)
+                                    PersonalValuesRowView(value: valueData)
                                         .onTapGesture {
                                             edit(valueData)
                                         }
@@ -131,8 +129,7 @@ public struct PersonalValuesListView: View {
         }
         .sheet(item: $valueToEdit) { valueData in
             NavigationStack {
-                // Transform PersonalValueData to PersonalValue for form view
-                PersonalValuesFormView(valueToEdit: valueData.asValue)
+                PersonalValuesFormView(valueToEdit: valueData)
             }
         }
         .alert(

@@ -119,26 +119,16 @@ public final class GoalsListViewModel {
     ///
     /// - Parameter goalData: The goal to delete (canonical GoalData type)
     ///
-    /// **Implementation**: Transforms GoalData to GoalWithDetails, then uses GoalCoordinator
+    /// **Implementation**: Uses new GoalCoordinator.delete(_:GoalData) method directly
     /// **Side Effects**: Reloads goals list after successful deletion
-    /// **NEW**: Accepts GoalData, transforms to GoalWithDetails for coordinator
     public func deleteGoal(_ goalData: GoalData) async {
         isLoading = true
         errorMessage = nil
 
         do {
-            // Transform GoalData to GoalWithDetails for coordinator
-            let goalWithDetails = goalData.asDetails
-
             // Use coordinator for atomic delete with cascading relationships
             let coordinator = GoalCoordinator(database: database)
-            try await coordinator.delete(
-                goal: goalWithDetails.goal,
-                expectation: goalWithDetails.expectation,
-                targets: goalWithDetails.metricTargets.map(\.expectationMeasure),
-                alignments: goalWithDetails.valueAlignments.map(\.goalRelevance),
-                assignment: goalWithDetails.termAssignment
-            )
+            try await coordinator.delete(goalData)
 
             // Reload list after successful delete
             await loadGoals()

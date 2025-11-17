@@ -26,7 +26,7 @@ public struct TermsListView: View {
     @State private var showingForm = false
 
     /// Term being edited (nil = create mode)
-    @State private var termToEdit: (timePeriod: TimePeriod, goalTerm: GoalTerm)?
+    @State private var termToEdit: TimePeriodData?
 
     /// Selected term for keyboard navigation
     @State private var selectedTerm: TimePeriodData?
@@ -55,13 +55,11 @@ public struct TermsListView: View {
             } else {
                 List(selection: $selectedTerm) {
                     ForEach(viewModel.terms) { termData in
-                        // Transform TimePeriodData to entities for TermRowView
-                        let termWithPeriod = termData.asWithPeriod
-                        TermRowView(term: termWithPeriod.term, timePeriod: termWithPeriod.timePeriod)
+                        TermRowView(timePeriod: termData)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 // Tap row → edit
-                                termToEdit = (termWithPeriod.timePeriod, termWithPeriod.term)
+                                termToEdit = termData
                                 showingForm = true
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -74,7 +72,7 @@ public struct TermsListView: View {
                             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 Button {
                                     // Swipe left → edit
-                                    termToEdit = (termWithPeriod.timePeriod, termWithPeriod.term)
+                                    termToEdit = termData
                                     showingForm = true
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
@@ -84,7 +82,7 @@ public struct TermsListView: View {
                             // Context menu for mouse/trackpad users
                             .contextMenu {
                                 Button {
-                                    termToEdit = (termWithPeriod.timePeriod, termWithPeriod.term)
+                                    termToEdit = termData
                                     showingForm = true
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
@@ -144,7 +142,7 @@ public struct TermsListView: View {
             }
             // Force sheet to recreate when termToEdit changes
             // Fixes bug: clicking same term twice showed "New Term" instead of edit
-            .id(termToEdit?.goalTerm.id)
+            .id(termToEdit?.id)
         }
         .alert(
             "Delete Term",

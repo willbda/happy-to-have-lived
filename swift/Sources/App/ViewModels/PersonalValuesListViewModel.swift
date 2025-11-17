@@ -136,12 +136,9 @@ public final class PersonalValuesListViewModel {
         errorMessage = nil
 
         do {
-            // Transform canonical data type to entity for coordinator
-            let value = valueData.asValue
-
-            // Use coordinator for atomic delete
+            // Use coordinator for delete
             let coordinator = PersonalValueCoordinator(database: database)
-            try await coordinator.delete(value: value)
+            try await coordinator.delete(valueData)
 
             // Reload list after successful delete
             await loadValues()

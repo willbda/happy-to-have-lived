@@ -187,13 +187,13 @@ public final class TimePeriodCoordinator: Sendable {
             // 1. Delete GoalTerm by ID (has FK to TimePeriod)
             try db.execute(
                 sql: "DELETE FROM goalTerms WHERE id = ?",
-                arguments: [timePeriodData.id.uuidString]
+                arguments: [timePeriodData.id.uuidString.lowercased()]
             )
 
             // 2. Delete TimePeriod by ID
             try db.execute(
                 sql: "DELETE FROM timePeriods WHERE id = ?",
-                arguments: [timePeriodData.timePeriodId.uuidString]
+                arguments: [timePeriodData.timePeriodId.uuidString.lowercased()]
             )
         }
     }

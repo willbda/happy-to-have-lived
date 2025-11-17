@@ -54,7 +54,8 @@ public final class ActionCoordinator: Sendable {
             for measurement in formData.measurements where measurement.measureId != nil {
                 let measureExists = try Measure.find(measurement.measureId!).fetchOne(db) != nil
                 guard measureExists else {
-                    throw ValidationError.invalidMeasure("Measure \(measurement.measureId!) not found")
+                    throw ValidationError.invalidMeasure(
+                        "Measure \(measurement.measureId!) not found")
                 }
             }
 
@@ -70,7 +71,8 @@ public final class ActionCoordinator: Sendable {
             let action = try Action.insert {
                 Action.Draft(
                     title: formData.title.isEmpty ? nil : formData.title,
-                    detailedDescription: formData.detailedDescription.isEmpty ? nil : formData.detailedDescription,
+                    detailedDescription: formData.detailedDescription.isEmpty
+                        ? nil : formData.detailedDescription,
                     freeformNotes: formData.freeformNotes.isEmpty ? nil : formData.freeformNotes,
                     durationMinutes: formData.durationMinutes > 0 ? formData.durationMinutes : nil,
                     startTime: formData.startTime,
@@ -174,7 +176,8 @@ public final class ActionCoordinator: Sendable {
             for measurement in formData.measurements where measurement.measureId != nil {
                 let measureExists = try Measure.find(measurement.measureId!).fetchOne(db) != nil
                 guard measureExists else {
-                    throw ValidationError.invalidMeasure("Measure \(measurement.measureId!) not found")
+                    throw ValidationError.invalidMeasure(
+                        "Measure \(measurement.measureId!) not found")
                 }
             }
 
@@ -190,7 +193,8 @@ public final class ActionCoordinator: Sendable {
             let updatedAction = try Action.upsert {
                 Action.Draft(
                     title: formData.title.isEmpty ? nil : formData.title,
-                    detailedDescription: formData.detailedDescription.isEmpty ? nil : formData.detailedDescription,
+                    detailedDescription: formData.detailedDescription.isEmpty
+                        ? nil : formData.detailedDescription,
                     freeformNotes: formData.freeformNotes.isEmpty ? nil : formData.freeformNotes,
                     durationMinutes: formData.durationMinutes > 0 ? formData.durationMinutes : nil,
                     startTime: formData.startTime,
@@ -241,7 +245,8 @@ public final class ActionCoordinator: Sendable {
             }
 
             // Phase 2: Validate complete entity graph
-            let newMeasurements = formData.measurements.compactMap { measurement -> MeasuredAction? in
+            let newMeasurements = formData.measurements.compactMap {
+                measurement -> MeasuredAction? in
                 guard let measureId = measurement.measureId else { return nil }
                 return MeasuredAction(
                     actionId: updatedAction.id,
@@ -284,7 +289,7 @@ public final class ActionCoordinator: Sendable {
             for measurement in actionData.measurements {
                 try db.execute(
                     sql: "DELETE FROM measuredActions WHERE id = ?",
-                    arguments: [measurement.id.uuidString]
+                    arguments: [measurement.id.uuidString.lowercased()]
                 )
             }
 
@@ -292,14 +297,14 @@ public final class ActionCoordinator: Sendable {
             for contribution in actionData.contributions {
                 try db.execute(
                     sql: "DELETE FROM actionGoalContributions WHERE id = ?",
-                    arguments: [contribution.id.uuidString]
+                    arguments: [contribution.id.uuidString.lowercased()]
                 )
             }
 
             // 3. Delete Action by ID
             try db.execute(
                 sql: "DELETE FROM actions WHERE id = ?",
-                arguments: [actionData.id.uuidString]
+                arguments: [actionData.id.uuidString.lowercased()]
             )
         }
     }

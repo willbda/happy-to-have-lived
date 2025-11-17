@@ -7,10 +7,10 @@
 // MODELS: Expectation + Goal + ExpectationMeasure[] + GoalRelevance[] + TermGoalAssignment?
 //
 
+import Dependencies
 import Foundation
 import Models
 import SQLiteData
-import Dependencies
 
 /// Coordinates creation of Goal entities with atomic persistence.
 ///
@@ -84,7 +84,8 @@ public final class GoalCoordinator: Sendable {
             for alignment in formData.valueAlignments where alignment.valueId != nil {
                 let valueExists = try PersonalValue.find(alignment.valueId!).fetchOne(db) != nil
                 guard valueExists else {
-                    throw ValidationError.foreignKeyViolation("PersonalValue \(alignment.valueId!) not found")
+                    throw ValidationError.foreignKeyViolation(
+                        "PersonalValue \(alignment.valueId!) not found")
                 }
             }
 
@@ -102,7 +103,8 @@ public final class GoalCoordinator: Sendable {
                     id: UUID(),
                     logTime: Date(),
                     title: formData.title.isEmpty ? nil : formData.title,
-                    detailedDescription: formData.detailedDescription.isEmpty ? nil : formData.detailedDescription,
+                    detailedDescription: formData.detailedDescription.isEmpty
+                        ? nil : formData.detailedDescription,
                     freeformNotes: formData.freeformNotes.isEmpty ? nil : formData.freeformNotes,
                     expectationType: .goal,
                     expectationImportance: formData.expectationImportance,
@@ -149,7 +151,8 @@ public final class GoalCoordinator: Sendable {
                         goalId: goal.id,
                         valueId: alignment.valueId!,  // Already validated above
                         alignmentStrength: alignment.alignmentStrength,
-                        relevanceNotes: alignment.relevanceNotes?.isEmpty == true ? nil : alignment.relevanceNotes,
+                        relevanceNotes: alignment.relevanceNotes?.isEmpty == true
+                            ? nil : alignment.relevanceNotes,
                         createdAt: Date()
                     )
                 }
@@ -250,7 +253,8 @@ public final class GoalCoordinator: Sendable {
             for alignment in formData.valueAlignments where alignment.valueId != nil {
                 let valueExists = try PersonalValue.find(alignment.valueId!).fetchOne(db) != nil
                 guard valueExists else {
-                    throw ValidationError.foreignKeyViolation("PersonalValue \(alignment.valueId!) not found")
+                    throw ValidationError.foreignKeyViolation(
+                        "PersonalValue \(alignment.valueId!) not found")
                 }
             }
 
@@ -268,7 +272,8 @@ public final class GoalCoordinator: Sendable {
                     id: expectation.id,  // Preserve ID
                     logTime: expectation.logTime,  // Preserve original logTime
                     title: formData.title.isEmpty ? nil : formData.title,
-                    detailedDescription: formData.detailedDescription.isEmpty ? nil : formData.detailedDescription,
+                    detailedDescription: formData.detailedDescription.isEmpty
+                        ? nil : formData.detailedDescription,
                     freeformNotes: formData.freeformNotes.isEmpty ? nil : formData.freeformNotes,
                     expectationType: .goal,
                     expectationImportance: formData.expectationImportance,
@@ -325,7 +330,8 @@ public final class GoalCoordinator: Sendable {
                         goalId: updatedGoal.id,
                         valueId: alignment.valueId!,
                         alignmentStrength: alignment.alignmentStrength,
-                        relevanceNotes: alignment.relevanceNotes?.isEmpty == true ? nil : alignment.relevanceNotes,
+                        relevanceNotes: alignment.relevanceNotes?.isEmpty == true
+                            ? nil : alignment.relevanceNotes,
                         createdAt: Date()
                     )
                 }
@@ -352,7 +358,8 @@ public final class GoalCoordinator: Sendable {
             }
 
             // Phase 2: Validate complete entity graph
-            let newMeasurements = formData.metricTargets.compactMap { target -> ExpectationMeasure? in
+            let newMeasurements = formData.metricTargets.compactMap {
+                target -> ExpectationMeasure? in
                 guard let measureId = target.measureId, target.isValid else { return nil }
                 return ExpectationMeasure(
                     expectationId: updatedExpectation.id,
@@ -376,7 +383,8 @@ public final class GoalCoordinator: Sendable {
                 )
             }
 
-            try GoalValidation.validateComplete(updatedExpectation, updatedGoal, newMeasurements, newRelevances)
+            try GoalValidation.validateComplete(
+                updatedExpectation, updatedGoal, newMeasurements, newRelevances)
 
             return updatedGoal
         }
@@ -415,7 +423,7 @@ public final class GoalCoordinator: Sendable {
             for target in goalData.measureTargets {
                 try db.execute(
                     sql: "DELETE FROM expectationMeasures WHERE id = ?",
-                    arguments: [target.id.uuidString]
+                    arguments: [target.id.uuidString.lowercased()]
                 )
             }
 
@@ -423,14 +431,14 @@ public final class GoalCoordinator: Sendable {
             for alignment in goalData.valueAlignments {
                 try db.execute(
                     sql: "DELETE FROM goalRelevances WHERE id = ?",
-                    arguments: [alignment.id.uuidString]
+                    arguments: [alignment.id.uuidString.lowercased()]
                 )
             }
 
             // 3. Delete TermGoalAssignment if exists
             if let assignment = goalData.termAssignment {
                 try db.execute(
-                    sql: "DELETE FROM termGoalAssignments WHERE id = ?",
+                    sql: "DELETE FROMid.uuidString.lowercased()gnments WHERE id = ?",
                     arguments: [assignment.id.uuidString]
                 )
             }
@@ -438,7 +446,7 @@ public final class GoalCoordinator: Sendable {
             // 4. Delete Goal by ID
             try db.execute(
                 sql: "DELETE FROM goals WHERE id = ?",
-                arguments: [goalData.id.uuidString]
+                arguments: [goalData.id.uuidString.lowercased()]
             )
 
             // 5. Delete Expectation by ID

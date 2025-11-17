@@ -179,7 +179,7 @@ public final class PersonalValueCoordinator: Sendable {
         try await database.write { db in
             try db.execute(
                 sql: "DELETE FROM personalValues WHERE id = ?",
-                arguments: [valueData.id.uuidString]
+                arguments: [valueData.id.uuidString.lowercased()]
             )
         }
     }

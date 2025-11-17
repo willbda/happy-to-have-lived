@@ -98,6 +98,14 @@ public enum DatabaseBootstrap {
         // Ensure semantic tables exist (migration for existing databases)
         try ensureSemanticTables(db)
 
+        // Attach metadatabase for CloudKit sync metadata access
+        // IMPORTANT: This allows querying SyncMetadata table from app database
+        // See: https://swiftpackageindex.com/pointfreeco/sqlite-data/1.3.0/documentation/sqlitedata/cloudkit
+        try db.write { db in
+            try db.attachMetadatabase()
+        }
+        print("   Metadatabase: attached for SyncMetadata access")
+
         return db
     }
 

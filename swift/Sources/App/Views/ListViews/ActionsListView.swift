@@ -33,6 +33,7 @@ public struct ActionsListView: View {
     @State private var showingAddAction = false
     @State private var actionToEdit: Models.ActionData?
     @State private var actionToDelete: Models.ActionData?
+    @State private var showingDeleteAlert = false
     @State private var selectedAction: Models.ActionData?
     @State private var formData: ActionFormData?  // For Quick Add pre-filling
 
@@ -109,7 +110,7 @@ public struct ActionsListView: View {
         }
         .alert(
             "Delete Action",
-            isPresented: .constant(actionToDelete != nil),
+            isPresented: $showingDeleteAlert,
             presenting: actionToDelete
         ) { actionData in
             Button("Cancel", role: .cancel) {
@@ -173,6 +174,7 @@ public struct ActionsListView: View {
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             actionToDelete = actionData
+                            showingDeleteAlert = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -197,6 +199,7 @@ public struct ActionsListView: View {
 
                         Button(role: .destructive) {
                             actionToDelete = actionData
+                            showingDeleteAlert = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -208,6 +211,7 @@ public struct ActionsListView: View {
         .onDeleteCommand {
             if let selected = selectedAction {
                 actionToDelete = selected
+                showingDeleteAlert = true
             }
         }
         #endif

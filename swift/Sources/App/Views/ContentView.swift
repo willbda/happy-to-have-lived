@@ -75,6 +75,14 @@
                   Label("Health", systemImage: "heart.text.square")
               }
               #endif
+
+              // Tab 8: CloudKit Sync Debug
+              NavigationStack {
+                  SyncDebugView()
+              }
+              .tabItem {
+                  Label("Sync", systemImage: "icloud.and.arrow.up.fill")
+              }
           }
       }
   }

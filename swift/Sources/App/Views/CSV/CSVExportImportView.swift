@@ -8,11 +8,12 @@
 // Import feature disabled (coming soon).
 //
 
-import SwiftUI
-import SQLiteData
 import Dependencies
-import Services
 import Models
+import SQLiteData
+import Services
+import SwiftUI
+import UniformTypeIdentifiers
 
 struct CSVExportImportView: View {
     @Dependency(\.defaultDatabase) private var database
@@ -86,12 +87,15 @@ struct CSVExportImportView: View {
                                 ProgressView()
                                     .controlSize(.small)
                             } else {
-                                Label("Export \(selectedEntityType.displayName)", systemImage: "square.and.arrow.down.fill")
+                                Label(
+                                    "Export \(selectedEntityType.displayName)",
+                                    systemImage: "square.and.arrow.down.fill")
                             }
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(isExporting)
-                        .accessibilityLabel("Export all \(selectedEntityType.displayName) to text file")
+                        .accessibilityLabel(
+                            "Export all \(selectedEntityType.displayName) to text file")
 
                         if !exportResult.isEmpty {
                             Text(exportResult)
@@ -114,7 +118,9 @@ struct CSVExportImportView: View {
                                 ProgressView()
                                     .controlSize(.small)
                             } else {
-                                Label("Import \(selectedEntityType.displayName)", systemImage: "doc.badge.arrow.up")
+                                Label(
+                                    "Import \(selectedEntityType.displayName)",
+                                    systemImage: "doc.badge.arrow.up")
                             }
                         }
                         .buttonStyle(.bordered)
@@ -231,12 +237,14 @@ struct CSVExportImportView: View {
 
                 // Create temporary directory for export
                 let tempDir = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString, isDirectory: true)
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+                    .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+                try FileManager.default.createDirectory(
+                    at: tempDir, withIntermediateDirectories: true)
 
                 // Export to temp location with selected format
                 let exporter = DataExporter(database: database)
-                let outputURL = try await exporter.exportToFile(entityType, to: tempDir, format: format)
+                let outputURL = try await exporter.exportToFile(
+                    entityType, to: tempDir, format: format)
 
                 // Store URL and show file exporter
                 exportedFileURL = outputURL
@@ -252,9 +260,9 @@ struct CSVExportImportView: View {
         switch result {
         case .success(let url):
             exportResult = """
-            ✓ Exported to:
-            - \(url.lastPathComponent)
-            """
+                ✓ Exported to:
+                - \(url.lastPathComponent)
+                """
         case .failure(let error):
             exportResult = "⚠️ Save failed: \(error.localizedDescription)"
         }
@@ -287,7 +295,8 @@ struct CSVExportImportView: View {
 
                     switch entityType {
                     case .actions:
-                        let records = try await importer.previewActions(from: fileURL, format: format)
+                        let records = try await importer.previewActions(
+                            from: fileURL, format: format)
                         importRecordsActions = records
 
                     case .goals:
@@ -295,11 +304,13 @@ struct CSVExportImportView: View {
                         importRecordsGoals = records
 
                     case .values:
-                        let records = try await importer.previewPersonalValues(from: fileURL, format: format)
+                        let records = try await importer.previewPersonalValues(
+                            from: fileURL, format: format)
                         importRecordsValues = records
 
                     case .terms:
-                        let records = try await importer.previewTimePeriods(from: fileURL, format: format)
+                        let records = try await importer.previewTimePeriods(
+                            from: fileURL, format: format)
                         importRecordsPeriods = records
                     }
 
@@ -352,8 +363,6 @@ struct CSVExportImportView: View {
 }
 
 // MARK: - TextFileDocument
-
-import UniformTypeIdentifiers
 
 struct TextFileDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.plainText, .commaSeparatedText, .json] }

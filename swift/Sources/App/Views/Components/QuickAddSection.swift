@@ -44,17 +44,17 @@ public struct QuickAddSection: View {
 
     // MARK: - Properties
 
-    /// Recent actions with measurements
-    let recentActions: [ActionWithDetails]
+    /// Recent actions with measurements (canonical data)
+    let recentActions: [ActionData]
 
-    /// Active goals with targets
-    let activeGoals: [GoalWithDetails]
+    /// Active goals with targets (canonical data)
+    let activeGoals: [GoalData]
 
     /// Callback to show form with pre-filled action data
     let onDuplicateAction: (ActionFormData) -> Void
 
     /// Callback to show form with goal-related action data
-    let onLogActionForGoal: (GoalWithDetails) -> Void
+    let onLogActionForGoal: (GoalData) -> Void
 
     // MARK: - State
 
@@ -64,10 +64,10 @@ public struct QuickAddSection: View {
     // MARK: - Initialization
 
     public init(
-        recentActions: [ActionWithDetails],
-        activeGoals: [GoalWithDetails],
+        recentActions: [ActionData],
+        activeGoals: [GoalData],
         onDuplicateAction: @escaping (ActionFormData) -> Void,
-        onLogActionForGoal: @escaping (GoalWithDetails) -> Void
+        onLogActionForGoal: @escaping (GoalData) -> Void
     ) {
         self.recentActions = recentActions
         self.activeGoals = activeGoals
@@ -137,16 +137,16 @@ public struct QuickAddSection: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(recentActions.prefix(5), id: \.action.id) { actionDetail in
+                    ForEach(recentActions.prefix(5), id: \.id) { actionData in
                         QuickActionCard(
-                            title: actionDetail.action.title ?? "Untitled",
-                            subtitle: formatActionDetails(actionDetail),
+                            title: actionData.title ?? "Untitled",
+                            subtitle: formatActionDetails(actionData),
                             icon: "doc.text",
                             iconColor: .blue,
                             actionIcon: "plus.square.on.square"
                         ) {
                             // Build FormData from existing action
-                            let formData = buildFormData(from: actionDetail)
+                            let formData = buildFormData(from: actionData)
                             onDuplicateAction(formData)
                         }
                     }
@@ -168,15 +168,15 @@ public struct QuickAddSection: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(activeGoals.prefix(5), id: \.goal.id) { goalDetail in
+                    ForEach(activeGoals.prefix(5), id: \.id) { goalData in
                         QuickActionCard(
-                            title: goalDetail.expectation.title ?? "Untitled",
-                            subtitle: formatGoalDetails(goalDetail),
+                            title: goalData.title ?? "Untitled",
+                            subtitle: formatGoalDetails(goalData),
                             icon: "target",
                             iconColor: .orange,
                             actionIcon: "plus.circle"
                         ) {
-                            onLogActionForGoal(goalDetail)
+                            onLogActionForGoal(goalData)
                         }
                     }
                 }
@@ -198,28 +198,28 @@ public struct QuickAddSection: View {
 
     // MARK: - Helper Functions
 
-    /// Build ActionFormData from existing ActionWithDetails
+    /// Build ActionFormData from existing ActionData
     ///
     /// Copies all fields except resets startTime to now
-    private func buildFormData(from actionDetail: ActionWithDetails) -> ActionFormData {
-        // Convert measurements to MeasurementInput
-        let measurements = actionDetail.measurements.map { detail in
+    private func buildFormData(from actionData: ActionData) -> ActionFormData {
+        // Convert measurements to MeasurementInput (from flat ActionData.Measurement)
+        let measurements = actionData.measurements.map { measurement in
             MeasurementInput(
-                measureId: detail.measure.id,
-                value: detail.measuredAction.value
+                measureId: measurement.measureId,
+                value: measurement.value
             )
         }
 
         // Convert goal contributions to UUID set
         let goalContributions = Set(
-            actionDetail.contributions.map { $0.contribution.goalId }
+            actionData.contributions.map { $0.goalId }
         )
 
         return ActionFormData(
-            title: actionDetail.action.title ?? "",
-            detailedDescription: actionDetail.action.detailedDescription ?? "",
-            freeformNotes: actionDetail.action.freeformNotes ?? "",
-            durationMinutes: actionDetail.action.durationMinutes ?? 0,
+            title: actionData.title ?? "",
+            detailedDescription: actionData.detailedDescription ?? "",
+            freeformNotes: actionData.freeformNotes ?? "",
+            durationMinutes: actionData.durationMinutes ?? 0,
             startTime: Date(),  // Reset to now (not historical time)
             measurements: measurements,
             goalContributions: goalContributions
@@ -229,19 +229,19 @@ public struct QuickAddSection: View {
     /// Format action details for card subtitle
     ///
     /// Shows: measurements (max 2) + duration
-    private func formatActionDetails(_ actionDetail: ActionWithDetails) -> String {
+    private func formatActionDetails(_ actionData: ActionData) -> String {
         var parts: [String] = []
 
-        // Add measurements (max 2)
-        if !actionDetail.measurements.isEmpty {
-            let formatted = actionDetail.measurements.prefix(2).map { detail in
-                String(format: "%.1f %@", detail.measuredAction.value, detail.measure.unit)
+        // Add measurements (max 2) - using flat ActionData.Measurement structure
+        if !actionData.measurements.isEmpty {
+            let formatted = actionData.measurements.prefix(2).map { measurement in
+                String(format: "%.1f %@", measurement.value, measurement.measureUnit)
             }
             parts.append(contentsOf: formatted)
         }
 
         // Add duration
-        if let duration = actionDetail.action.durationMinutes {
+        if let duration = actionData.durationMinutes {
             parts.append(String(format: "%.0f min", duration))
         }
 
@@ -251,20 +251,20 @@ public struct QuickAddSection: View {
     /// Format goal details for card subtitle
     ///
     /// Shows: first target + due date
-    private func formatGoalDetails(_ goalDetail: GoalWithDetails) -> String {
+    private func formatGoalDetails(_ goalData: GoalData) -> String {
         var parts: [String] = []
 
-        // Add first target
-        if let firstTarget = goalDetail.metricTargets.first {
+        // Add first target - using flat GoalData.MeasureTarget structure
+        if let firstTarget = goalData.measureTargets.first {
             parts.append(String(
                 format: "Target: %.1f %@",
-                firstTarget.expectationMeasure.targetValue,
-                firstTarget.measure.unit
+                firstTarget.targetValue,
+                firstTarget.measureUnit
             ))
         }
 
         // Add target date
-        if let targetDate = goalDetail.goal.targetDate {
+        if let targetDate = goalData.targetDate {
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
             parts.append("Due: \(formatter.string(from: targetDate))")

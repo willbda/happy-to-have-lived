@@ -109,20 +109,33 @@ public final class PersonalValuesFormViewModel {
 
     /// Updates existing PersonalValue from form data.
     /// - Parameters:
-    ///   - value: Existing PersonalValue to update
+    ///   - valueData: Existing PersonalValueData (canonical type)
     ///   - formData: New form data
     /// - Returns: Updated PersonalValue
     /// - Throws: CoordinatorError or database errors
     ///
     /// PATTERN: FormData-based method (establishes pattern for template)
     public func update(
-        value: PersonalValue,
+        valueData: PersonalValueData,
         from formData: PersonalValueFormData
     ) async throws -> PersonalValue {
         isSaving = true
         defer { isSaving = false }
 
         do {
+            // Reconstruct PersonalValue entity from PersonalValueData
+            let value = PersonalValue(
+                title: valueData.title,
+                detailedDescription: valueData.detailedDescription,
+                freeformNotes: valueData.freeformNotes,
+                priority: valueData.priority,
+                valueLevel: ValueLevel(rawValue: valueData.valueLevel) ?? .general,
+                lifeDomain: valueData.lifeDomain,
+                alignmentGuidance: valueData.alignmentGuidance,
+                logTime: valueData.logTime,
+                id: valueData.id
+            )
+
             let updatedValue = try await coordinator.update(value: value, from: formData)
             errorMessage = nil
             return updatedValue
@@ -133,14 +146,14 @@ public final class PersonalValuesFormViewModel {
     }
 
     /// Deletes PersonalValue.
-    /// - Parameter value: PersonalValue to delete
+    /// - Parameter valueData: Canonical personal value data to delete
     /// - Throws: Database errors if constraints violated
-    public func delete(value: PersonalValue) async throws {
+    public func delete(valueData: PersonalValueData) async throws {
         isSaving = true
         defer { isSaving = false }
 
         do {
-            try await coordinator.delete(value: value)
+            try await coordinator.delete(valueData)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

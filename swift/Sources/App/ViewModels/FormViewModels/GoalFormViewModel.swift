@@ -122,8 +122,8 @@ public final class GoalFormViewModel {
     /// - Returns: Updated Goal
     /// - Throws: CoordinatorError if validation fails
     public func update(
-        // Existing data
-        goalDetails: GoalWithDetails,
+        // Existing data (canonical type)
+        goalData: GoalData,
         // New form fields
         title: String,
         detailedDescription: String,
@@ -157,17 +157,70 @@ public final class GoalFormViewModel {
             termId: termId
         )
 
-        // Extract existing relationships for coordinator
-        let existingTargets = goalDetails.metricTargets.map { $0.expectationMeasure }
-        let existingAlignments = goalDetails.valueAlignments.map { $0.goalRelevance }
-
         do {
+            // Reconstruct Goal entity from GoalData
+            let goal = Goal(
+                expectationId: goalData.expectationId,
+                startDate: goalData.startDate,
+                targetDate: goalData.targetDate,
+                actionPlan: goalData.actionPlan,
+                expectedTermLength: goalData.expectedTermLength,
+                id: goalData.id
+            )
+
+            // Reconstruct Expectation entity from GoalData
+            let expectation = Expectation(
+                title: goalData.title,
+                detailedDescription: goalData.detailedDescription,
+                freeformNotes: goalData.freeformNotes,
+                expectationType: .goal,
+                expectationImportance: goalData.expectationImportance,
+                expectationUrgency: goalData.expectationUrgency,
+                logTime: goalData.logTime,
+                id: goalData.expectationId
+            )
+
+            // Reconstruct ExpectationMeasure entities from denormalized targets
+            let existingTargets = goalData.measureTargets.map { target in
+                ExpectationMeasure(
+                    expectationId: goalData.expectationId,
+                    measureId: target.measureId,
+                    targetValue: target.targetValue,
+                    createdAt: target.createdAt,
+                    freeformNotes: target.freeformNotes,
+                    id: target.id
+                )
+            }
+
+            // Reconstruct GoalRelevance entities from denormalized alignments
+            let existingAlignments = goalData.valueAlignments.map { alignment in
+                GoalRelevance(
+                    goalId: goalData.id,
+                    valueId: alignment.valueId,
+                    alignmentStrength: alignment.alignmentStrength,
+                    relevanceNotes: alignment.relevanceNotes,
+                    createdAt: alignment.createdAt,
+                    id: alignment.id
+                )
+            }
+
+            // Reconstruct TermGoalAssignment from denormalized assignment
+            let existingAssignment: TermGoalAssignment? = goalData.termAssignment.map { assignment in
+                TermGoalAssignment(
+                    id: assignment.id,
+                    termId: assignment.termId,
+                    goalId: goalData.id,
+                    assignmentOrder: assignment.assignmentOrder,
+                    createdAt: assignment.createdAt
+                )
+            }
+
             let updatedGoal = try await coordinator.update(
-                goal: goalDetails.goal,
-                expectation: goalDetails.expectation,
+                goal: goal,
+                expectation: expectation,
                 existingTargets: existingTargets,
                 existingAlignments: existingAlignments,
-                existingAssignment: goalDetails.termAssignment,
+                existingAssignment: existingAssignment,
                 from: formData
             )
             errorMessage = nil
@@ -179,24 +232,14 @@ public final class GoalFormViewModel {
     }
 
     /// Deletes a goal and all its relationships
-    /// - Parameter goalDetails: Goal with all relationships to delete
+    /// - Parameter goalData: Canonical goal data to delete
     /// - Throws: CoordinatorError if deletion fails
-    public func delete(goalDetails: GoalWithDetails) async throws {
+    public func delete(goalData: GoalData) async throws {
         isSaving = true
         defer { isSaving = false }
 
-        // Extract relationships for coordinator
-        let targets = goalDetails.metricTargets.map { $0.expectationMeasure }
-        let alignments = goalDetails.valueAlignments.map { $0.goalRelevance }
-
         do {
-            try await coordinator.delete(
-                goal: goalDetails.goal,
-                expectation: goalDetails.expectation,
-                targets: targets,
-                alignments: alignments,
-                assignment: goalDetails.termAssignment
-            )
+            try await coordinator.delete(goalData)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

@@ -193,31 +193,62 @@ public final class ActionFormViewModel {
 
     /// Updates existing Action from form data.
     /// - Parameters:
-    ///   - actionDetails: Existing ActionWithDetails (from ActionsQuery)
+    ///   - actionData: Existing ActionData (canonical type)
     ///   - formData: New form data
     /// - Returns: Updated Action
     /// - Throws: CoordinatorError or database errors
     ///
     /// PATTERN: FormData-based method (clean, template-ready)
     public func update(
-        actionDetails: ActionWithDetails,
+        actionData: ActionData,
         from formData: ActionFormData
     ) async throws -> Action {
         isSaving = true
         defer { isSaving = false }
 
         do {
-            let existingMeasurements = actionDetails.measurements.map { $0.measuredAction }
-            let existingContributions = actionDetails.contributions.map { $0.contribution }
+            // Reconstruct Action entity from ActionData
+            let action = Action(
+                title: actionData.title,
+                detailedDescription: actionData.detailedDescription,
+                freeformNotes: actionData.freeformNotes,
+                durationMinutes: actionData.durationMinutes,
+                startTime: actionData.startTime,
+                logTime: actionData.logTime,
+                id: actionData.id
+            )
 
-            let action = try await coordinator.update(
-                action: actionDetails.action,
+            // Reconstruct MeasuredAction entities from denormalized measurements
+            let existingMeasurements = actionData.measurements.map { measurement in
+                MeasuredAction(
+                    actionId: actionData.id,
+                    measureId: measurement.measureId,
+                    value: measurement.value,
+                    createdAt: measurement.createdAt,
+                    id: measurement.id
+                )
+            }
+
+            // Reconstruct ActionGoalContribution entities from denormalized contributions
+            let existingContributions = actionData.contributions.map { contribution in
+                ActionGoalContribution(
+                    actionId: actionData.id,
+                    goalId: contribution.goalId,
+                    contributionAmount: contribution.contributionAmount,
+                    measureId: contribution.measureId,
+                    createdAt: contribution.createdAt,
+                    id: contribution.id
+                )
+            }
+
+            let updatedAction = try await coordinator.update(
+                action: action,
                 measurements: existingMeasurements,
                 contributions: existingContributions,
                 from: formData
             )
             errorMessage = nil
-            return action
+            return updatedAction
         } catch {
             errorMessage = error.localizedDescription
             throw error
@@ -228,9 +259,9 @@ public final class ActionFormViewModel {
     /// - Returns: Updated Action
     /// - Throws: CoordinatorError or database errors
     ///
-    /// NOTE: Legacy method - prefer update(actionDetails:from:) for consistency
+    /// NOTE: Legacy method - prefer update(actionData:from:) for consistency
     public func update(
-        actionDetails: ActionWithDetails,
+        actionData: ActionData,
         title: String,
         description: String = "",
         notes: String = "",
@@ -257,7 +288,7 @@ public final class ActionFormViewModel {
             goalContributions: goalContributions
         )
 
-        return try await update(actionDetails: actionDetails, from: formData)
+        return try await update(actionData: actionData, from: formData)
     }
 
     // MARK: - Delete
@@ -267,20 +298,13 @@ public final class ActionFormViewModel {
     /// - Parameter actionDetails: ActionWithDetails to delete
     /// - Throws: Database errors
     public func delete(
-        actionDetails: ActionWithDetails
+        actionData: ActionData
     ) async throws {
         isSaving = true
         defer { isSaving = false }
 
         do {
-            let existingMeasurements = actionDetails.measurements.map { $0.measuredAction }
-            let existingContributions = actionDetails.contributions.map { $0.contribution }
-
-            try await coordinator.delete(
-                action: actionDetails.action,
-                measurements: existingMeasurements,
-                contributions: existingContributions
-            )
+            try await coordinator.delete(actionData)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

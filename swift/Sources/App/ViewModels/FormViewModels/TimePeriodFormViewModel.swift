@@ -88,12 +88,11 @@ public final class TimePeriodFormViewModel {
     }
 
     /// Updates existing TimePeriod with specialization.
-    /// - Parameters: Existing entities + updated form fields
+    /// - Parameters: Existing time period data (canonical type) + updated form fields
     /// - Returns: Updated TimePeriod
     /// - Throws: Database errors
     public func update(
-        timePeriod: TimePeriod,
-        goalTerm: GoalTerm,
+        timePeriodData: TimePeriodData,
         startDate: Date,
         targetDate: Date,
         specialization: TimePeriodSpecialization,
@@ -120,6 +119,27 @@ public final class TimePeriodFormViewModel {
         )
 
         do {
+            // Reconstruct TimePeriod entity from TimePeriodData
+            let timePeriod = TimePeriod(
+                title: timePeriodData.timePeriodTitle,
+                detailedDescription: nil,  // Not stored in TimePeriodData
+                freeformNotes: nil,  // Not stored in TimePeriodData
+                startDate: timePeriodData.startDate,
+                endDate: timePeriodData.endDate,
+                logTime: Date(),  // Will be preserved by coordinator
+                id: timePeriodData.timePeriodId
+            )
+
+            // Reconstruct GoalTerm entity from TimePeriodData
+            let goalTerm = GoalTerm(
+                timePeriodId: timePeriodData.timePeriodId,
+                termNumber: timePeriodData.termNumber,
+                theme: timePeriodData.theme,
+                reflection: timePeriodData.reflection,
+                status: timePeriodData.termStatus ?? .planned,
+                id: timePeriodData.id
+            )
+
             let updatedTimePeriod = try await coordinator.update(
                 timePeriod: timePeriod,
                 goalTerm: goalTerm,
@@ -137,14 +157,13 @@ public final class TimePeriodFormViewModel {
     /// - Parameters: Entities to delete
     /// - Throws: Database errors (e.g., if Term has goal assignments)
     public func delete(
-        timePeriod: TimePeriod,
-        goalTerm: GoalTerm
+        timePeriodData: TimePeriodData
     ) async throws {
         isSaving = true
         defer { isSaving = false }
 
         do {
-            try await coordinator.delete(timePeriod: timePeriod, goalTerm: goalTerm)
+            try await coordinator.delete(timePeriodData)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription

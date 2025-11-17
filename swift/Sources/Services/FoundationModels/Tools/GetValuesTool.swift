@@ -8,12 +8,12 @@
 //  PATTERN: Foundation Models Tool protocol implementation
 //
 
+import Database
 import Foundation
 import FoundationModels
+import Models
 import SQLiteData
 import Services
-import Models
-import Database
 
 /// Tool for fetching user's personal values
 @available(iOS 26.0, macOS 26.0, *)
@@ -21,7 +21,8 @@ public struct GetValuesTool: Tool {
     // MARK: - Tool Protocol Requirements
 
     public let name = "getValues"
-    public let description = "Fetch the user's personal values and life areas to understand what matters most to them"
+    public let description =
+        "Fetch the user's personal values and life areas to understand what matters most to them"
 
     // MARK: - Arguments
 
@@ -84,7 +85,8 @@ public struct GetValuesTool: Tool {
         }
 
         // Sort by priority (highest first) and apply limit
-        values = values
+        values =
+            values
             .sorted { $0.priority > $1.priority }
             .prefix(arguments.limit)
             .map { $0 }
@@ -92,7 +94,7 @@ public struct GetValuesTool: Tool {
         // Map to response format
         let summaries = values.map { value in
             ValueSummary(
-                id: value.id.uuidString,
+                id: value.id.uuidString.lowercased(),
                 title: value.title,
                 description: value.detailedDescription,
                 priority: value.priority,

@@ -8,12 +8,12 @@
 //  PATTERN: Foundation Models Tool protocol implementation
 //
 
+import Database
 import Foundation
 import FoundationModels
+import Models
 import SQLiteData
 import Services
-import Models
-import Database
 
 /// Tool for fetching user's goals with details
 @available(iOS 26.0, macOS 26.0, *)
@@ -21,7 +21,8 @@ public struct GetGoalsTool: Tool {
     // MARK: - Tool Protocol Requirements
 
     public let name = "getGoals"
-    public let description = "Fetch the user's goals with full details including measures and value alignments"
+    public let description =
+        "Fetch the user's goals with full details including measures and value alignments"
 
     // MARK: - Arguments
 
@@ -70,7 +71,8 @@ public struct GetGoalsTool: Tool {
         let goals: [GoalData]
 
         if let termIdString = arguments.termId,
-           let termUUID = UUID(uuidString: termIdString) {
+            let termUUID = UUID(uuidString: termIdString)
+        {
             // Fetch goals for specific term
             goals = try await repository.fetchByTerm(termUUID)
         } else {
@@ -94,7 +96,7 @@ public struct GetGoalsTool: Tool {
         // Map GoalData to response format (flat structure access)
         let summaries = filteredGoals.map { goal in
             GoalSummary(
-                id: goal.id.uuidString,
+                id: goal.id.uuidString.lowercased(),
                 title: goal.title ?? "Untitled Goal",
                 description: goal.detailedDescription,
                 startDate: goal.startDate?.ISO8601Format(),

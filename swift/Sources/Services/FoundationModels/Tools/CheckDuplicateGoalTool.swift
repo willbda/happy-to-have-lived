@@ -10,9 +10,9 @@
 
 import Foundation
 import FoundationModels
+import Models
 import SQLiteData
 import Services
-import Models
 
 /// Tool for checking if a goal would be a duplicate before creation
 @available(iOS 26.0, macOS 26.0, *)
@@ -20,7 +20,8 @@ public struct CheckDuplicateGoalTool: Tool {
     // MARK: - Tool Protocol Requirements
 
     public let name = "checkDuplicateGoal"
-    public let description = "Check if a goal title would duplicate an existing goal using semantic similarity"
+    public let description =
+        "Check if a goal title would duplicate an existing goal using semantic similarity"
 
     // MARK: - Arguments
 
@@ -151,9 +152,11 @@ public struct CheckDuplicateGoalTool: Tool {
         // Determine recommended action
         let recommendedAction: String
         if isDuplicate, let best = matches.first {
-            recommendedAction = "High similarity (\(best.similarityPercentage)) with '\(best.title)'. Consider editing the existing goal instead."
+            recommendedAction =
+                "High similarity (\(best.similarityPercentage)) with '\(best.title)'. Consider editing the existing goal instead."
         } else if !matches.isEmpty {
-            recommendedAction = "Possible similarity detected. Review the similar goals below before creating."
+            recommendedAction =
+                "Possible similarity detected. Review the similar goals below before creating."
         } else {
             recommendedAction = "No significant duplicates found. Safe to create new goal."
         }
@@ -174,13 +177,14 @@ public struct CheckDuplicateGoalTool: Tool {
         let normalizedTitle = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 
         let exactMatches = existingGoals.filter { goal in
-            goal.title?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalizedTitle
+            goal.title?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                == normalizedTitle
         }
 
         if !exactMatches.isEmpty {
             let similarGoals = exactMatches.prefix(maxResults).map { goal in
                 SimilarGoal(
-                    id: goal.id.uuidString,
+                    id: goal.id.uuidString.lowercased(),
                     title: goal.title ?? "Untitled",
                     description: goal.detailedDescription,
                     similarityScore: 1.0,
@@ -200,7 +204,8 @@ public struct CheckDuplicateGoalTool: Tool {
         return DuplicateCheckResponse(
             isDuplicate: false,
             similarGoals: [],
-            recommendedAction: "No exact matches found. Semantic checking unavailable. Proceed with caution."
+            recommendedAction:
+                "No exact matches found. Semantic checking unavailable. Proceed with caution."
         )
     }
 }
@@ -230,7 +235,7 @@ public struct SimilarGoal: Codable {
 
 // MARK: - Errors
 
-fileprivate enum ToolError: LocalizedError {
+private enum ToolError: LocalizedError {
     case invalidInput(String)
 
     var errorDescription: String? {

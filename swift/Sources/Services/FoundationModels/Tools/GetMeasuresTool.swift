@@ -10,8 +10,8 @@
 
 import Foundation
 import FoundationModels
-import SQLiteData
 import Models
+import SQLiteData
 
 /// Tool for fetching available measurement types
 @available(iOS 26.0, macOS 26.0, *)
@@ -19,13 +19,15 @@ public struct GetMeasuresTool: Tool {
     // MARK: - Tool Protocol Requirements
 
     public let name = "getMeasures"
-    public let description = "Fetch available measurement types that can be used for tracking goals and actions"
+    public let description =
+        "Fetch available measurement types that can be used for tracking goals and actions"
 
     // MARK: - Arguments
 
     @Generable
     public struct Arguments: Codable, Sendable {
-        @Guide(description: "Filter by measure type (e.g., 'duration', 'count', 'distance', 'weight')")
+        @Guide(
+            description: "Filter by measure type (e.g., 'duration', 'count', 'distance', 'weight')")
         let measureType: String?
 
         @Guide(description: "Search for measures by keyword in title")
@@ -71,8 +73,8 @@ public struct GetMeasuresTool: Tool {
                 // We'll fetch all and filter in memory
                 let allMeasures = try query.fetchAll(db)
                 return allMeasures.filter { measure in
-                    (measure.title?.lowercased().contains(keyword) ?? false) ||
-                    (measure.detailedDescription?.lowercased().contains(keyword) ?? false)
+                    (measure.title?.lowercased().contains(keyword) ?? false)
+                        || (measure.detailedDescription?.lowercased().contains(keyword) ?? false)
                 }
             } else {
                 return try query.fetchAll(db)
@@ -85,7 +87,7 @@ public struct GetMeasuresTool: Tool {
         // Map to response format
         let summaries = limitedMeasures.map { measure in
             MeasureSummary(
-                id: measure.id.uuidString,
+                id: measure.id.uuidString.lowercased(),
                 title: measure.title ?? "Unnamed Measure",
                 description: measure.detailedDescription,
                 unit: measure.unit,

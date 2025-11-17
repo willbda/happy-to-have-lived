@@ -8,12 +8,12 @@
 //  PATTERN: Foundation Models Tool protocol implementation
 //
 
+import Dependencies
 import Foundation
 import FoundationModels
-import SQLiteData
 import Models
+import SQLiteData
 import Services
-import Dependencies
 
 /// Tool for creating new goals with validation and deduplication
 @available(iOS 26.0, macOS 26.0, *)
@@ -21,7 +21,8 @@ public struct CreateGoalTool: Tool {
     // MARK: - Tool Protocol Requirements
 
     public let name = "createGoal"
-    public let description = "Create a new goal after validating it doesn't duplicate existing goals"
+    public let description =
+        "Create a new goal after validating it doesn't duplicate existing goals"
 
     // MARK: - Arguments
 
@@ -105,7 +106,9 @@ public struct CreateGoalTool: Tool {
 
         // Parse dates if provided
         let parsedStartDate = arguments.startDate.flatMap { ISO8601DateFormatter().date(from: $0) }
-        let parsedTargetDate = arguments.targetDate.flatMap { ISO8601DateFormatter().date(from: $0) }
+        let parsedTargetDate = arguments.targetDate.flatMap {
+            ISO8601DateFormatter().date(from: $0)
+        }
 
         // Validate date range
         if let start = parsedStartDate, let target = parsedTargetDate {
@@ -155,7 +158,7 @@ public struct CreateGoalTool: Tool {
 
             return CreateGoalResponse(
                 success: true,
-                goalId: goal.id.uuidString,
+                goalId: goal.id.uuidString.lowercased(),
                 message: "Goal '\(arguments.title)' created successfully",
                 duplicateFound: false,
                 similarGoalId: nil
@@ -220,7 +223,7 @@ public struct CreateGoalTool: Tool {
                 return DuplicateCheckResult(
                     isDuplicate: true,
                     message: "A goal with this exact title already exists",
-                    similarGoalId: match.id.uuidString
+                    similarGoalId: match.id.uuidString.lowercased()
                 )
             }
 
@@ -229,7 +232,9 @@ public struct CreateGoalTool: Tool {
     }
 
     /// Convert metric target inputs from LLM (String IDs) to form data (UUID)
-    private func convertMetricTargets(_ inputs: [LLMMetricTargetInput]) -> [Services.MetricTargetInput] {
+    private func convertMetricTargets(_ inputs: [LLMMetricTargetInput]) -> [Services
+        .MetricTargetInput]
+    {
         inputs.compactMap { input in
             guard let measureId = UUID(uuidString: input.measureId) else { return nil }
             return Services.MetricTargetInput(
@@ -241,7 +246,9 @@ public struct CreateGoalTool: Tool {
     }
 
     /// Convert value alignment inputs from LLM (String IDs) to form data (UUID)
-    private func convertValueAlignments(_ inputs: [LLMValueAlignmentInput]) -> [Services.ValueAlignmentInput] {
+    private func convertValueAlignments(_ inputs: [LLMValueAlignmentInput]) -> [Services
+        .ValueAlignmentInput]
+    {
         inputs.compactMap { input in
             guard let valueId = UUID(uuidString: input.valueId) else { return nil }
             return Services.ValueAlignmentInput(
@@ -295,7 +302,7 @@ private struct DuplicateCheckResult {
 
 // MARK: - Errors
 
-fileprivate enum ToolError: LocalizedError {
+private enum ToolError: LocalizedError {
     case invalidInput(String)
     case executionFailed(String)
 

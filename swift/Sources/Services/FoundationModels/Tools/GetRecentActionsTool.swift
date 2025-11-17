@@ -19,7 +19,8 @@ public struct GetRecentActionsTool: Tool {
     // MARK: - Tool Protocol Requirements
 
     public let name = "getRecentActions"
-    public let description = "Fetch recent actions the user has taken, including measurements and goal contributions"
+    public let description =
+        "Fetch recent actions the user has taken, including measurements and goal contributions"
 
     // MARK: - Arguments
 
@@ -63,11 +64,12 @@ public struct GetRecentActionsTool: Tool {
     public func call(arguments: Arguments) async throws -> RecentActionsResponse {
         // Calculate date range
         let endDate = Date()
-        let startDate = Calendar.current.date(
-            byAdding: .day,
-            value: -arguments.daysBack,
-            to: endDate
-        ) ?? endDate
+        let startDate =
+            Calendar.current.date(
+                byAdding: .day,
+                value: -arguments.daysBack,
+                to: endDate
+            ) ?? endDate
 
         // Create repository
         let repository = ActionRepository(database: database)
@@ -82,7 +84,8 @@ public struct GetRecentActionsTool: Tool {
 
         // Filter by goal if specified
         if let goalIdString = arguments.goalId,
-           let goalUUID = UUID(uuidString: goalIdString) {
+            let goalUUID = UUID(uuidString: goalIdString)
+        {
             actions = actions.filter { action in
                 action.contributions.contains { contribution in
                     contribution.goalId == goalUUID
@@ -96,7 +99,8 @@ public struct GetRecentActionsTool: Tool {
         }
 
         // Sort by date (most recent first) and apply limit
-        actions = actions
+        actions =
+            actions
             .sorted { $0.logTime > $1.logTime }
             .prefix(arguments.limit)
             .map { $0 }
@@ -104,7 +108,7 @@ public struct GetRecentActionsTool: Tool {
         // Map to response format
         let summaries = actions.map { action in
             ActionSummary(
-                id: action.id.uuidString,
+                id: action.id.uuidString.lowercased(),
                 title: action.title ?? "Untitled Action",
                 description: action.detailedDescription,
                 logTime: action.logTime.ISO8601Format(),
@@ -119,7 +123,8 @@ public struct GetRecentActionsTool: Tool {
                 goalContributions: action.contributions.map { contribution in
                     GoalContribution(
                         goalId: contribution.goalId.uuidString,
-                        goalTitle: contribution.goalTitle ?? "Goal \(contribution.goalId.uuidString.prefix(8))",
+                        goalTitle: contribution.goalTitle
+                            ?? "Goal \(contribution.goalId.uuidString.prefix(8))",
                         contributionAmount: contribution.contributionAmount
                     )
                 }

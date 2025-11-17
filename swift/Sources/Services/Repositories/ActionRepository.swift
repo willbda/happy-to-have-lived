@@ -1,133 +1,284 @@
 //
-// ActionRepository.swift
-// Written by Claude Code on 2025-11-09
-// Refactored to JSON aggregation on 2025-11-13
-// Refactored to canonical ActionData type on 2025-11-15
+// ActionRepository_v3.swift
+// Written by Claude Code on 2025-11-16
 //
 // PURPOSE:
-// Read coordinator for Action entities with measurements and goal contributions.
-// Uses JSON aggregation pattern for efficient single-query fetches.
-// Returns canonical ActionData type for both display and export needs.
+// Repository for Action entities using canonical ActionData type.
+// Most complex repository - handles measurements (1:many) and goal contributions (1:many).
 //
-// RESPONSIBILITIES:
-// 1. Complex reads - fetchAll(), fetchByDateRange(), fetchByGoal() with JSON aggregation
-// 2. Aggregations - totalByMeasure(), countByGoal()
-// 3. Existence checks - exists() for duplicate prevention
-// 4. Error mapping - DatabaseError → ValidationError
+// DESIGN DECISIONS:
+// - Extends BaseRepository<ActionData> (no separate export type)
+// - Uses JSON aggregation for measurements + goal contributions
+// - Relationship data: measurements[] and contributions[] via json_group_array
+// - Inherits: error mapping, read/write wrappers, date filtering, pagination
+// - Adds entity-specific: relationship queries, aggregations, compound uniqueness checks
 //
-// PATTERN (migrated from query builders + Dictionary(grouping:)):
-// - Single SQL query with json_group_array() for relationships
-// - Row structs with FetchableRecord for decoding
-// - assembleActionData() for JSON parsing and canonical type construction
-// - ActionData serves both display (via .asDetails) and export (via Codable)
-// - Mirrors GoalRepository pattern (GoalRepository.swift:260-508)
+// COMPLEXITY vs OTHER REPOSITORIES:
+// - Goal: 3 relationships (measures, values, term) - similar complexity
+// - Action: 2 relationships (measurements, contributions) - similar complexity
+// - PersonalValue: 1 relationship (aligned goals) - simpler
+// - TimePeriod: 0 relationships (simple 1:1 JOIN) - simplest
 //
 
 import Foundation
 import Models
 import SQLiteData
-import GRDB  // For FetchableRecord protocol
+import GRDB
 
-// MARK: - Canonical Data Type
-//
-// ActionData is now defined in Models/CanonicalTypes/ActionData.swift
-// This repository returns ActionData for both display and export needs.
-// Export types (ActionExport, MeasurementExport) are deprecated - use ActionData instead.
+/// Repository for managing Action entities with measurements and goal contributions
+///
+/// **Architecture Pattern**:
+/// ```
+/// ActionRepository_v3 → BaseRepository<ActionData> → Repository protocol
+///                    ↓
+///         JSONAggregationStrategy (for measurements + contributions)
+/// ```
+///
+/// **What BaseRepository Provides**:
+/// - ✅ Error mapping (mapDatabaseError with customization)
+/// - ✅ Read/write wrappers with automatic error handling
+/// - ✅ Date filtering helpers (DateFilter)
+/// - ✅ Pagination (fetch(limit:offset:), fetchRecent(limit:))
+///
+/// **What This Repository Adds**:
+/// - Entity-specific queries (fetchByGoal, fetchByDateRange)
+/// - Aggregations (totalByMeasure, countByGoal)
+/// - Compound uniqueness checks (exists(title:on:) - title + date)
+/// - JSON aggregation assembly (measurements + contributions → ActionData)
+///
+public final class ActionRepository_v3: BaseRepository<ActionData> {
 
-// MARK: - Repository Implementation
-
-public final class ActionRepository: Sendable {
-    private let database: any DatabaseWriter
-
-    public init(database: any DatabaseWriter) {
-        self.database = database
-    }
-
-    // MARK: - Complex Queries
+    // MARK: - Required Overrides
 
     /// Fetch all actions with measurements and goal contributions
     ///
-    /// **Performance**: Single query with JSON aggregation (was 3 queries)
-    /// **Returns**: Canonical ActionData (use `.asDetails` if views need ActionWithDetails)
+    /// **Implementation Strategy**: JSON Aggregation
+    /// - Single SQL query with 2 nested SELECT subqueries for relationships
+    /// - Avoids N+1 problem (single database round trip)
+    /// - Returns ActionData (canonical type)
     ///
-    /// **Date Filtering** (optional):
-    /// - from: Include actions with logTime >= from
-    /// - to: Include actions with logTime <= to
-    /// - If both nil, returns all actions
-    public func fetchAll(from startDate: Date? = nil, to endDate: Date? = nil) async throws -> [ActionData] {
-        do {
-            return try await database.read { db in
-                // Build SQL with optional date filter
-                let sql: String
-                let arguments: StatementArguments
+    /// **SQL Pattern** (from ActionRepository.swift:284-344):
+    /// ```sql
+    /// SELECT a.*,
+    ///   COALESCE((SELECT json_group_array(json_object(...)) FROM measuredActions JOIN measures), '[]'),
+    ///   COALESCE((SELECT json_group_array(json_object(...)) FROM actionGoalContributions JOIN goals), '[]')
+    /// FROM actions a
+    /// ORDER BY logTime DESC
+    /// ```
+    public override func fetchAll() async throws -> [ActionData] {
+        try await read { db in
+            let sql = """
+                SELECT
+                    a.id as actionId,
+                    a.title as actionTitle,
+                    a.detailedDescription as actionDetailedDescription,
+                    a.freeformNotes as actionFreeformNotes,
+                    a.logTime as actionLogTime,
+                    a.durationMinutes as actionDurationMinutes,
+                    a.startTime as actionStartTime,
 
-                if let startDate = startDate, let endDate = endDate {
-                    sql = """
-                    \(baseQuerySQL)
-                    WHERE a.logTime BETWEEN ? AND ?
-                    ORDER BY a.logTime DESC
-                    """
-                    arguments = [startDate, endDate]
-                } else if let startDate = startDate {
-                    sql = """
-                    \(baseQuerySQL)
-                    WHERE a.logTime >= ?
-                    ORDER BY a.logTime DESC
-                    """
-                    arguments = [startDate]
-                } else if let endDate = endDate {
-                    sql = """
-                    \(baseQuerySQL)
-                    WHERE a.logTime <= ?
-                    ORDER BY a.logTime DESC
-                    """
-                    arguments = [endDate]
-                } else {
-                    sql = fetchAllSQL
-                    arguments = []
-                }
+                    -- Measurements JSON array (all measurements for this action)
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'measuredActionId', ma.id,
+                                    'value', ma.value,
+                                    'createdAt', ma.createdAt,
+                                    'measureId', m.id,
+                                    'measureTitle', m.title,
+                                    'measureUnit', m.unit,
+                                    'measureType', m.measureType
+                                )
+                            )
+                            FROM measuredActions ma
+                            JOIN measures m ON ma.measureId = m.id
+                            WHERE ma.actionId = a.id
+                        ),
+                        '[]'
+                    ) as measurementsJson,
 
-                let rows = try ActionQueryRow.fetchAll(db, sql: sql, arguments: arguments)
-                return try rows.map { row in
-                    try assembleActionData(from: row)
-                }
-            }
-        } catch {
-            throw mapDatabaseError(error)
-        }
-    }
+                    -- Contributions JSON array (all goals this action contributes to)
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'contributionId', agc.id,
+                                    'contributionAmount', agc.contributionAmount,
+                                    'measureId', agc.measureId,
+                                    'createdAt', agc.createdAt,
+                                    'goalId', g.id,
+                                    'goalTitle', e.title
+                                )
+                            )
+                            FROM actionGoalContributions agc
+                            JOIN goals g ON agc.goalId = g.id
+                            JOIN expectations e ON g.expectationId = e.id
+                            WHERE agc.actionId = a.id
+                        ),
+                        '[]'
+                    ) as contributionsJson
 
-
-    /// Fetch actions within a date range
-    ///
-    /// **Performance**: Single query with JSON aggregation + date filter
-    public func fetchByDateRange(_ range: ClosedRange<Date>) async throws -> [ActionData] {
-        do {
-            return try await database.read { db in
-                let sql = """
-                \(baseQuerySQL)
-                WHERE a.logTime BETWEEN ? AND ?
+                FROM actions a
                 ORDER BY a.logTime DESC
                 """
 
-                let rows = try ActionQueryRow.fetchAll(db, sql: sql, arguments: [range.lowerBound, range.upperBound])
-                return try rows.map { row in
-                    try assembleActionData(from: row)
-                }
-            }
-        } catch {
-            throw mapDatabaseError(error)
+            let rows = try ActionQueryRow.fetchAll(db, sql: sql)
+            return try rows.map { try self.assembleActionData(from: $0) }
         }
+    }
+
+    /// Check if action exists by ID
+    ///
+    /// **Implementation**: Simple SELECT query with LIMIT
+    /// Uses inherited `read` wrapper for automatic error mapping.
+    public override func exists(_ id: UUID) async throws -> Bool {
+        try await read { db in
+            let sql = "SELECT 1 FROM actions WHERE id = ? LIMIT 1"
+            return try Row.fetchOne(db, sql: sql, arguments: [id]) != nil
+        }
+    }
+
+    /// Fetch actions with optional date filtering (for export)
+    ///
+    /// **Implementation**: Same as fetchAll() + WHERE clause on logTime
+    /// Uses DateFilter helper from ExportSupport for consistent date filtering.
+    public override func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [ActionData] {
+        try await read { db in
+            let dateFilter = DateFilter(startDate: startDate, endDate: endDate)
+            let (whereClause, arguments) = dateFilter.buildWhereClause(dateColumn: "a.logTime")
+
+            let sql = """
+                SELECT
+                    a.id as actionId,
+                    a.title as actionTitle,
+                    a.detailedDescription as actionDetailedDescription,
+                    a.freeformNotes as actionFreeformNotes,
+                    a.logTime as actionLogTime,
+                    a.durationMinutes as actionDurationMinutes,
+                    a.startTime as actionStartTime,
+
+                    -- Measurements JSON array
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'measuredActionId', ma.id,
+                                    'value', ma.value,
+                                    'createdAt', ma.createdAt,
+                                    'measureId', m.id,
+                                    'measureTitle', m.title,
+                                    'measureUnit', m.unit,
+                                    'measureType', m.measureType
+                                )
+                            )
+                            FROM measuredActions ma
+                            JOIN measures m ON ma.measureId = m.id
+                            WHERE ma.actionId = a.id
+                        ),
+                        '[]'
+                    ) as measurementsJson,
+
+                    -- Contributions JSON array
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'contributionId', agc.id,
+                                    'contributionAmount', agc.contributionAmount,
+                                    'measureId', agc.measureId,
+                                    'createdAt', agc.createdAt,
+                                    'goalId', g.id,
+                                    'goalTitle', e.title
+                                )
+                            )
+                            FROM actionGoalContributions agc
+                            JOIN goals g ON agc.goalId = g.id
+                            JOIN expectations e ON g.expectationId = e.id
+                            WHERE agc.actionId = a.id
+                        ),
+                        '[]'
+                    ) as contributionsJson
+
+                FROM actions a
+                \(whereClause)
+                ORDER BY a.logTime DESC
+                """
+
+            let rows = try ActionQueryRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            return try rows.map { try self.assembleActionData(from: $0) }
+        }
+    }
+
+    // MARK: - Entity-Specific Queries
+
+    /// Fetch actions within a date range
+    ///
+    /// **Use Case**: "Show all actions from last week" or term-based filtering
+    /// **Implementation**: Uses DateFilter helper for consistent date handling
+    public func fetchByDateRange(_ range: ClosedRange<Date>) async throws -> [ActionData] {
+        try await fetchForExport(from: range.lowerBound, to: range.upperBound)
     }
 
     /// Fetch actions contributing to a specific goal
     ///
-    /// **Performance**: Single query with JSON aggregation + goal filter
+    /// **Use Case**: "What actions contributed to this goal?"
+    /// **Implementation**: WHERE EXISTS with subquery on actionGoalContributions
     public func fetchByGoal(_ goalId: UUID) async throws -> [ActionData] {
-        do {
-            return try await database.read { db in
-                let sql = """
-                \(baseQuerySQL)
+        try await read { db in
+            let sql = """
+                SELECT
+                    a.id as actionId,
+                    a.title as actionTitle,
+                    a.detailedDescription as actionDetailedDescription,
+                    a.freeformNotes as actionFreeformNotes,
+                    a.logTime as actionLogTime,
+                    a.durationMinutes as actionDurationMinutes,
+                    a.startTime as actionStartTime,
+
+                    -- Measurements JSON array
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'measuredActionId', ma.id,
+                                    'value', ma.value,
+                                    'createdAt', ma.createdAt,
+                                    'measureId', m.id,
+                                    'measureTitle', m.title,
+                                    'measureUnit', m.unit,
+                                    'measureType', m.measureType
+                                )
+                            )
+                            FROM measuredActions ma
+                            JOIN measures m ON ma.measureId = m.id
+                            WHERE ma.actionId = a.id
+                        ),
+                        '[]'
+                    ) as measurementsJson,
+
+                    -- Contributions JSON array
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'contributionId', agc.id,
+                                    'contributionAmount', agc.contributionAmount,
+                                    'measureId', agc.measureId,
+                                    'createdAt', agc.createdAt,
+                                    'goalId', g.id,
+                                    'goalTitle', e.title
+                                )
+                            )
+                            FROM actionGoalContributions agc
+                            JOIN goals g ON agc.goalId = g.id
+                            JOIN expectations e ON g.expectationId = e.id
+                            WHERE agc.actionId = a.id
+                        ),
+                        '[]'
+                    ) as contributionsJson
+
+                FROM actions a
                 WHERE EXISTS (
                     SELECT 1 FROM actionGoalContributions agc2
                     WHERE agc2.actionId = a.id AND agc2.goalId = ?
@@ -135,388 +286,372 @@ public final class ActionRepository: Sendable {
                 ORDER BY a.logTime DESC
                 """
 
-                let rows = try ActionQueryRow.fetchAll(db, sql: sql, arguments: [goalId])
-                return try rows.map { row in
-                    try assembleActionData(from: row)
-                }
-            }
-        } catch {
-            throw mapDatabaseError(error)
+            let rows = try ActionQueryRow.fetchAll(db, sql: sql, arguments: [goalId])
+            return try rows.map { try self.assembleActionData(from: $0) }
         }
     }
 
     /// Fetch recent actions with limit
     ///
-    /// **Performance**: Single query with JSON aggregation + LIMIT
+    /// **Use Case**: Dashboard "Last 10 actions" widget
+    /// **Implementation**: ORDER BY logTime DESC LIMIT ?
     public func fetchRecentActions(limit: Int) async throws -> [ActionData] {
-        do {
-            return try await database.read { db in
-                let sql = """
-                \(baseQuerySQL)
+        try await read { db in
+            let sql = """
+                SELECT
+                    a.id as actionId,
+                    a.title as actionTitle,
+                    a.detailedDescription as actionDetailedDescription,
+                    a.freeformNotes as actionFreeformNotes,
+                    a.logTime as actionLogTime,
+                    a.durationMinutes as actionDurationMinutes,
+                    a.startTime as actionStartTime,
+
+                    -- Measurements JSON array
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'measuredActionId', ma.id,
+                                    'value', ma.value,
+                                    'createdAt', ma.createdAt,
+                                    'measureId', m.id,
+                                    'measureTitle', m.title,
+                                    'measureUnit', m.unit,
+                                    'measureType', m.measureType
+                                )
+                            )
+                            FROM measuredActions ma
+                            JOIN measures m ON ma.measureId = m.id
+                            WHERE ma.actionId = a.id
+                        ),
+                        '[]'
+                    ) as measurementsJson,
+
+                    -- Contributions JSON array
+                    COALESCE(
+                        (
+                            SELECT json_group_array(
+                                json_object(
+                                    'contributionId', agc.id,
+                                    'contributionAmount', agc.contributionAmount,
+                                    'measureId', agc.measureId,
+                                    'createdAt', agc.createdAt,
+                                    'goalId', g.id,
+                                    'goalTitle', e.title
+                                )
+                            )
+                            FROM actionGoalContributions agc
+                            JOIN goals g ON agc.goalId = g.id
+                            JOIN expectations e ON g.expectationId = e.id
+                            WHERE agc.actionId = a.id
+                        ),
+                        '[]'
+                    ) as contributionsJson
+
+                FROM actions a
                 ORDER BY a.logTime DESC
                 LIMIT ?
                 """
 
-                let rows = try ActionQueryRow.fetchAll(db, sql: sql, arguments: [limit])
-                return try rows.map { row in
-                    try assembleActionData(from: row)
-                }
-            }
-        } catch {
-            throw mapDatabaseError(error)
+            let rows = try ActionQueryRow.fetchAll(db, sql: sql, arguments: [limit])
+            return try rows.map { try self.assembleActionData(from: $0) }
         }
     }
 
+    /// Check if action exists by title and date (compound uniqueness)
+    ///
+    /// **Use Case**: Prevent duplicate "Morning run on 2025-11-16"
+    /// **Implementation**: WHERE title = ? AND logTime BETWEEN startOfDay AND endOfDay
+    ///
+    /// **Note**: More complex than PersonalValue's simple title check.
+    /// Actions can have same title on different days.
+    public func exists(title: String, on date: Date) async throws -> Bool {
+        try await read { db in
+            let calendar = Calendar.current
+            let startOfDay = calendar.startOfDay(for: date)
+            guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+                return false
+            }
 
-    // MARK: - Aggregations
+            let sql = """
+                SELECT 1 FROM actions
+                WHERE title = ? AND logTime >= ? AND logTime < ?
+                LIMIT 1
+                """
+
+            return try Row.fetchOne(db, sql: sql, arguments: [title, startOfDay, endOfDay]) != nil
+        }
+    }
+
+    // MARK: - Aggregation Queries
 
     /// Calculate total value for a measure within a date range
+    ///
+    /// **Use Case**: "How many miles did I run this month?"
+    /// **Implementation**: SUM(value) WHERE measureId = ? AND logTime BETWEEN ? AND ?
     public func totalByMeasure(_ measureId: UUID, in range: ClosedRange<Date>) async throws -> Double {
-        do {
-            return try await database.read { db in
-                try #sql(
-                    """
-                    SELECT COALESCE(SUM(\(MeasuredAction.value)), 0.0) as total
-                    FROM \(MeasuredAction.self)
-                    INNER JOIN \(Action.self) ON \(MeasuredAction.actionId) = \(Action.id)
-                    WHERE \(MeasuredAction.measureId) = \(bind: measureId)
-                      AND \(Action.logTime) BETWEEN \(bind: range.lowerBound) AND \(bind: range.upperBound)
-                    """,
-                    as: Double.self
-                ).fetchOne(db) ?? 0.0
-            }
-        } catch {
-            throw mapDatabaseError(error)
+        try await read { db in
+            let sql = """
+                SELECT COALESCE(SUM(ma.value), 0.0) as total
+                FROM measuredActions ma
+                INNER JOIN actions a ON ma.actionId = a.id
+                WHERE ma.measureId = ?
+                  AND a.logTime BETWEEN ? AND ?
+                """
+
+            return try Double.fetchOne(db, sql: sql, arguments: [measureId, range.lowerBound, range.upperBound]) ?? 0.0
         }
     }
 
     /// Count actions contributing to a specific goal
+    ///
+    /// **Use Case**: "How many actions contributed to this goal?"
+    /// **Implementation**: COUNT(DISTINCT actionId) WHERE goalId = ?
     public func countByGoal(_ goalId: UUID) async throws -> Int {
-        do {
-            return try await database.read { db in
-                try #sql(
-                    """
-                    SELECT COUNT(DISTINCT \(ActionGoalContribution.actionId))
-                    FROM \(ActionGoalContribution.self)
-                    WHERE \(ActionGoalContribution.goalId) = \(bind: goalId)
-                    """,
-                    as: Int.self
-                ).fetchOne(db) ?? 0
-            }
-        } catch {
-            throw mapDatabaseError(error)
-        }
-    }
-
-    // MARK: - Existence Checks
-
-    /// Check if an action exists by title and date
-    public func exists(title: String, on date: Date) async throws -> Bool {
-        do {
-            return try await database.read { db in
-                let calendar = Calendar.current
-                let startOfDay = calendar.startOfDay(for: date)
-                guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
-                    return false
-                }
-
-                let sql = """
-                SELECT COUNT(*) FROM actions
-                WHERE title = ? AND logTime >= ? AND logTime < ?
+        try await read { db in
+            let sql = """
+                SELECT COUNT(DISTINCT actionId)
+                FROM actionGoalContributions
+                WHERE goalId = ?
                 """
 
-                let count = try Int.fetchOne(db, sql: sql, arguments: [title, startOfDay, endOfDay]) ?? 0
-                return count > 0
-            }
-        } catch {
-            throw mapDatabaseError(error)
+            return try Int.fetchOne(db, sql: sql, arguments: [goalId]) ?? 0
         }
     }
 
-    /// Check if an action exists by ID
-    public func exists(_ id: UUID) async throws -> Bool {
-        do {
-            return try await database.read { db in
-                let sql = "SELECT COUNT(*) FROM actions WHERE id = ?"
-                let count = try Int.fetchOne(db, sql: sql, arguments: [id]) ?? 0
-                return count > 0
-            }
-        } catch {
-            throw mapDatabaseError(error)
-        }
-    }
+    // MARK: - Error Mapping Override
 
-    // MARK: - Error Mapping
-
-    private func mapDatabaseError(_ error: Error) -> ValidationError {
+    /// Map database errors to user-friendly validation errors
+    ///
+    /// **Action-specific mappings**:
+    /// - FOREIGN KEY on measureId → invalidMeasure
+    /// - FOREIGN KEY on goalId → invalidGoal
+    /// - NOT NULL on title/logTime → missingRequiredField
+    public override func mapDatabaseError(_ error: Error) -> ValidationError {
         guard let dbError = error as? DatabaseError else {
             return .databaseConstraint(error.localizedDescription)
         }
 
+        let message = dbError.message ?? ""
+
+        // Check constraint type
         switch dbError.resultCode {
         case .SQLITE_CONSTRAINT_FOREIGNKEY:
-            if dbError.message?.contains("measureId") == true {
+            if message.contains("measureId") {
                 return .invalidMeasure("Measure not found")
             }
-            if dbError.message?.contains("goalId") == true {
+            if message.contains("goalId") {
                 return .invalidGoal("Goal not found")
             }
             return .foreignKeyViolation("Referenced entity not found")
+
         case .SQLITE_CONSTRAINT_UNIQUE:
-            return .duplicateRecord("This entry already exists")
+            return .duplicateRecord("This action already exists")
+
         case .SQLITE_CONSTRAINT_NOTNULL:
-            return .missingRequiredField("Required field is missing")
+            if message.contains("title") {
+                return .missingRequiredField("Action title is required")
+            }
+            if message.contains("logTime") {
+                return .missingRequiredField("Action log time is required")
+            }
+            return .missingRequiredField(message)
+
         case .SQLITE_CONSTRAINT:
-            return .databaseConstraint(dbError.message ?? "Database constraint violated")
+            return .databaseConstraint(message)
+
+        case .SQLITE_BUSY, .SQLITE_LOCKED:
+            return .databaseConstraint("Database is temporarily unavailable. Please try again.")
+
         default:
             return .databaseConstraint(dbError.localizedDescription)
         }
     }
-}
 
-// MARK: - SQL Queries
+    // MARK: - Private Helpers
 
-extension ActionRepository {
-    /// Base SQL query with JSON aggregation for measurements and contributions
+    /// Assemble ActionData from JSON query row
     ///
-    /// **Pattern**: Mirrors GoalRepository.baseQuerySQL (GoalRepository.swift:452-508)
-    /// **Performance**: Single query replaces 3 separate queries + Dictionary(grouping:)
-    private var baseQuerySQL: String {
-        """
-        SELECT
-            a.id as actionId,
-            a.title as actionTitle,
-            a.detailedDescription as actionDetailedDescription,
-            a.freeformNotes as actionFreeformNotes,
-            a.logTime as actionLogTime,
-            a.durationMinutes as actionDurationMinutes,
-            a.startTime as actionStartTime,
+    /// **Pattern**: Parse 2 JSON arrays (measurements + contributions)
+    ///
+    /// **Process** (from ActionRepository.swift:416-482):
+    /// 1. Parse action fields (UUID, dates)
+    /// 2. Decode measurementsJson → [MeasurementJsonRow]
+    /// 3. Transform to [ActionData.Measurement]
+    /// 4. Decode contributionsJson → [ContributionJsonRow]
+    /// 5. Transform to [ActionData.Contribution]
+    /// 6. Assemble ActionData
+    ///
+    /// - Parameter row: ActionQueryRow with action fields + 2 JSON arrays
+    /// - Returns: Assembled ActionData
+    /// - Throws: ValidationError if JSON parsing or UUID conversion fails
+    private func assembleActionData(from row: ActionQueryRow) throws -> ActionData {
+        let decoder = JSONDecoder()
 
-            -- Measurements JSON array (all measurements for this action)
-            COALESCE(
-                (
-                    SELECT json_group_array(
-                        json_object(
-                            'measuredActionId', ma.id,
-                            'value', ma.value,
-                            'createdAt', ma.createdAt,
-                            'measureId', m.id,
-                            'measureTitle', m.title,
-                            'measureDetailedDescription', m.detailedDescription,
-                            'measureFreeformNotes', m.freeformNotes,
-                            'measureLogTime', m.logTime,
-                            'measureUnit', m.unit,
-                            'measureType', m.measureType,
-                            'measureCanonicalUnit', m.canonicalUnit,
-                            'measureConversionFactor', m.conversionFactor
-                        )
-                    )
-                    FROM measuredActions ma
-                    JOIN measures m ON ma.measureId = m.id
-                    WHERE ma.actionId = a.id
-                ),
-                '[]'
-            ) as measurementsJson,
-
-            -- Contributions JSON array (all goals this action contributes to)
-            COALESCE(
-                (
-                    SELECT json_group_array(
-                        json_object(
-                            'contributionId', agc.id,
-                            'contributionAmount', agc.contributionAmount,
-                            'measureId', agc.measureId,
-                            'createdAt', agc.createdAt,
-                            'goalId', g.id,
-                            'goalTitle', e.title
-                        )
-                    )
-                    FROM actionGoalContributions agc
-                    JOIN goals g ON agc.goalId = g.id
-                    JOIN expectations e ON g.expectationId = e.id
-                    WHERE agc.actionId = a.id
-                ),
-                '[]'
-            ) as contributionsJson
-
-        FROM actions a
-        """
-    }
-
-    /// Fetch all actions SQL (no filters)
-    private var fetchAllSQL: String {
-        """
-        \(baseQuerySQL)
-        ORDER BY a.logTime DESC
-        """
-    }
-}
-
-// MARK: - Row Types
-
-/// Result row from JSON aggregation query
-///
-/// **Pattern**: Mirrors GoalQueryRow (GoalRepository.swift:186-246)
-/// Decodes SQL result with json_group_array() columns
-public struct ActionQueryRow: Codable, FetchableRecord, Sendable {
-    // Action fields
-    let actionId: String
-    let actionTitle: String?
-    let actionDetailedDescription: String?
-    let actionFreeformNotes: String?
-    let actionLogTime: String
-    let actionDurationMinutes: Double?
-    let actionStartTime: String?
-
-    // JSON arrays (decoded as strings, parsed manually)
-    let measurementsJson: String
-    let contributionsJson: String
-}
-
-/// Decoded measurement from JSON array
-///
-/// **Pattern**: Mirrors MeasureJsonRow from GoalRepository
-private struct MeasurementJsonRow: Decodable, Sendable {
-    let measuredActionId: String
-    let value: Double
-    let createdAt: String
-    let measureId: String
-    let measureTitle: String?
-    let measureDetailedDescription: String?
-    let measureFreeformNotes: String?
-    let measureLogTime: String
-    let measureUnit: String
-    let measureType: String
-    let measureCanonicalUnit: String?
-    let measureConversionFactor: Double?
-}
-
-/// Decoded contribution from JSON array
-private struct ContributionJsonRow: Decodable, Sendable {
-    let contributionId: String
-    let contributionAmount: Double?
-    let measureId: String?
-    let createdAt: String
-    let goalId: String
-    let goalTitle: String?  // From JOIN with expectations table
-}
-
-// MARK: - Assembly Function
-
-/// Assemble ActionData from JSON query row
-///
-/// **New Pattern** (2025-11-15): Single canonical type for both display and export
-/// **Replaces**: assembleActionWithDetails() and assembleActionExport()
-///
-/// **Process**:
-/// 1. Parse JSON strings to structured arrays
-/// 2. Convert string dates/UUIDs to proper types
-/// 3. Build ActionData with flat Measurement and Contribution structs
-/// 4. Return canonical ActionData (consumers can call .asDetails if needed)
-public func assembleActionData(from row: ActionQueryRow) throws -> ActionData {
-    let decoder = JSONDecoder()
-
-    // Parse action fields
-    guard let actionUUID = UUID(uuidString: row.actionId) else {
-        throw ValidationError.databaseConstraint("Invalid action ID: \(row.actionId)")
-    }
-
-    // Parse measurements JSON
-    let measurementsData = row.measurementsJson.data(using: .utf8)!
-    let measurementsJson = try decoder.decode([MeasurementJsonRow].self, from: measurementsData)
-
-    let measurements: [ActionData.Measurement] = try measurementsJson.map { m in
-        guard let measuredActionUUID = UUID(uuidString: m.measuredActionId),
-              let measureUUID = UUID(uuidString: m.measureId) else {
-            throw ValidationError.databaseConstraint("Invalid UUID in measurement for action \(row.actionId)")
+        // Parse action ID
+        guard let actionUUID = UUID(uuidString: row.actionId) else {
+            throw ValidationError.databaseConstraint("Invalid action ID: \(row.actionId)")
         }
 
-        return ActionData.Measurement(
-            id: measuredActionUUID,
-            measureId: measureUUID,
-            measureTitle: m.measureTitle,
-            measureUnit: m.measureUnit,
-            measureType: m.measureType,
-            value: m.value,
-            createdAt: parseDate(m.createdAt) ?? Date()
+        // Parse measurements JSON
+        guard let measurementsData = row.measurementsJson.data(using: .utf8) else {
+            throw ValidationError.databaseConstraint("Invalid measurements JSON encoding")
+        }
+
+        let measurementsJson = try decoder.decode([MeasurementJsonRow].self, from: measurementsData)
+
+        let measurements: [ActionData.Measurement] = try measurementsJson.map { m in
+            guard let measuredActionUUID = UUID(uuidString: m.measuredActionId),
+                  let measureUUID = UUID(uuidString: m.measureId) else {
+                throw ValidationError.databaseConstraint("Invalid UUID in measurement for action \(row.actionId)")
+            }
+
+            return ActionData.Measurement(
+                id: measuredActionUUID,
+                measureId: measureUUID,
+                measureTitle: m.measureTitle,
+                measureUnit: m.measureUnit,
+                measureType: m.measureType,
+                value: m.value,
+                createdAt: parseDate(m.createdAt) ?? Date()
+            )
+        }
+
+        // Parse contributions JSON
+        guard let contributionsData = row.contributionsJson.data(using: .utf8) else {
+            throw ValidationError.databaseConstraint("Invalid contributions JSON encoding")
+        }
+
+        let contributionsJson = try decoder.decode([ContributionJsonRow].self, from: contributionsData)
+
+        let contributions: [ActionData.Contribution] = try contributionsJson.map { c in
+            guard let contributionUUID = UUID(uuidString: c.contributionId),
+                  let goalUUID = UUID(uuidString: c.goalId) else {
+                throw ValidationError.databaseConstraint("Invalid UUID in contribution for action \(row.actionId)")
+            }
+
+            let measureUUID: UUID? = if let mid = c.measureId {
+                UUID(uuidString: mid)
+            } else {
+                nil
+            }
+
+            return ActionData.Contribution(
+                id: contributionUUID,
+                goalId: goalUUID,
+                goalTitle: c.goalTitle,
+                contributionAmount: c.contributionAmount,
+                measureId: measureUUID,
+                createdAt: parseDate(c.createdAt) ?? Date()
+            )
+        }
+
+        return ActionData(
+            id: actionUUID,
+            title: row.actionTitle,
+            detailedDescription: row.actionDetailedDescription,
+            freeformNotes: row.actionFreeformNotes,
+            logTime: parseDate(row.actionLogTime) ?? Date(),
+            durationMinutes: row.actionDurationMinutes,
+            startTime: parseDate(row.actionStartTime),
+            measurements: measurements,
+            contributions: contributions
         )
     }
 
-    // Parse contributions JSON
-    let contributionsData = row.contributionsJson.data(using: .utf8)!
-    let contributionsJson = try decoder.decode([ContributionJsonRow].self, from: contributionsData)
+    // MARK: - Query Row Types
+    //
+    // NOTE: parseDate() inherited from BaseRepository (no override needed)
 
-    let contributions: [ActionData.Contribution] = try contributionsJson.map { c in
-        guard let contributionUUID = UUID(uuidString: c.contributionId),
-              let goalUUID = UUID(uuidString: c.goalId) else {
-            throw ValidationError.databaseConstraint("Invalid UUID in contribution for action \(row.actionId)")
-        }
+    /// Result row from JSON aggregation query
+    ///
+    /// **Pattern**: Matches SQL SELECT columns (ActionRepository.swift:361-374)
+    /// **Usage**: Intermediate struct for SQL → ActionData transformation
+    private struct ActionQueryRow: Decodable, FetchableRecord, Sendable {
+        // Action fields
+        let actionId: String
+        let actionTitle: String?
+        let actionDetailedDescription: String?
+        let actionFreeformNotes: String?
+        let actionLogTime: String
+        let actionDurationMinutes: Double?
+        let actionStartTime: String?
 
-        let measureUUID: UUID? = if let mid = c.measureId {
-            UUID(uuidString: mid)
-        } else {
-            nil
-        }
-
-        return ActionData.Contribution(
-            id: contributionUUID,
-            goalId: goalUUID,
-            goalTitle: c.goalTitle,
-            contributionAmount: c.contributionAmount,
-            measureId: measureUUID,
-            createdAt: parseDate(c.createdAt) ?? Date()
-        )
+        // JSON arrays (decoded as strings, parsed manually)
+        let measurementsJson: String
+        let contributionsJson: String
     }
 
-    return ActionData(
-        id: actionUUID,
-        title: row.actionTitle,
-        detailedDescription: row.actionDetailedDescription,
-        freeformNotes: row.actionFreeformNotes,
-        logTime: parseDate(row.actionLogTime) ?? Date(),
-        durationMinutes: row.actionDurationMinutes,
-        startTime: parseDate(row.actionStartTime),
-        measurements: measurements,
-        contributions: contributions
-    )
+    /// Decoded measurement from JSON array
+    ///
+    /// **Pattern**: Matches json_object() in SQL (ActionRepository.swift:379-392)
+    private struct MeasurementJsonRow: Decodable, Sendable {
+        let measuredActionId: String
+        let value: Double
+        let createdAt: String
+        let measureId: String
+        let measureTitle: String?
+        let measureUnit: String
+        let measureType: String
+    }
+
+    /// Decoded contribution from JSON array
+    ///
+    /// **Pattern**: Matches json_object() in SQL (ActionRepository.swift:395-402)
+    private struct ContributionJsonRow: Decodable, Sendable {
+        let contributionId: String
+        let contributionAmount: Double?
+        let measureId: String?
+        let createdAt: String
+        let goalId: String
+        let goalTitle: String?  // From JOIN with expectations table
+    }
 }
 
-// MARK: - Date Parsing Helper
+// MARK: - Sendable Conformance
 
-/// Parse ISO8601 date string to Date
-///
-/// **Pattern**: Shared with GoalRepository (GoalRepository.swift:425-434)
-private func parseDate(_ dateString: String?) -> Date? {
-    guard let dateString = dateString else { return nil }
-    let formatter = ISO8601DateFormatter()
-    return formatter.date(from: dateString)
-}
+// ActionRepository_v3 is Sendable because:
+// - Inherits from BaseRepository (already Sendable)
+// - No additional mutable state
+// - Safe to pass between actor boundaries
+extension ActionRepository_v3: @unchecked Sendable {}
 
-// MARK: - Implementation Notes
-
-// MIGRATION HISTORY
+// =============================================================================
+// IMPLEMENTATION NOTES
+// =============================================================================
 //
-// **Phase 1: Query Builders → JSON Aggregation** (2025-11-13)
-// - 3-4 separate queries → 1 query with json_group_array()
-// - Dictionary(grouping:) in Swift → SQLite aggregation
-// - ~150ms → ~50-70ms for 381 actions (2-3x improvement)
+// COMPLEXITY RANKING:
+// 1. ActionRepository_v3 (this file) - 2 relationships, complex JSON parsing
+// 2. GoalRepository_v3 - 3 relationships, most complex JSON parsing
+// 3. PersonalValueRepository_v3 - 1 relationship, simple UUID array
+// 4. TimePeriodRepository_v3 - 0 relationships, simple 1:1 JOIN
 //
-// **Phase 2: Multiple Types → Canonical Type** (2025-11-15)
-// - ActionWithDetails (display) + ActionExport (export) → ActionData (both)
-// - Two assembly functions (~140 LOC) → One assembly function (~60 LOC)
-// - Duplicate SQL queries → Single query reused for all purposes
+// JSON AGGREGATION PATTERN:
+// Actions have 2 JSON aggregation subqueries:
+// 1. measurementsJson - measuredActions JOIN measures (measurement details)
+// 2. contributionsJson - actionGoalContributions JOIN goals JOIN expectations (goal titles)
 //
-// **Benefits**:
-// 1. **Performance**: 3 queries → 1 query (fewer round trips)
-// 2. **Code Reduction**: ~80 LOC eliminated (57% reduction in assembly logic)
-// 3. **Consistency**: Same data structure for display and export
-// 4. **Maintainability**: Single source of truth for Action data
+// This is simpler than Goals (3 relationships) but more complex than PersonalValues (1).
 //
-// **Pattern**:
-// - Repository returns ActionData (canonical type)
-// - Views can call .asDetails if they need nested structure
-// - Export uses ActionData directly (already Codable)
-// - CSV formatter accesses flat properties
+// ASSEMBLY COMPLEXITY:
+// - Parse 2 JSON arrays (not 3 like Goals)
+// - Each array contains nested objects (not just UUIDs like PersonalValues)
+// - Date parsing needed for logTime, startTime, createdAt fields
+// - UUID parsing needed for all ID fields
 //
-// **Reference Implementation**: GoalRepository.swift:260-508
-// **Migration Dates**: 2025-11-13 (JSON aggregation), 2025-11-15 (canonical type)
+// ERROR MAPPING:
+// Action-specific constraints:
+// - FOREIGN KEY on measureId (measurement must exist)
+// - FOREIGN KEY on goalId (goal must exist for contribution)
+// - NOT NULL on title, logTime
+// - No compound UNIQUE constraints (duplicate detection is time-based)
+//
+// QUERY PATTERNS:
+// - fetchAll(): Base JSON aggregation query
+// - fetchByGoal(): Add WHERE EXISTS subquery
+// - fetchByDateRange(): Add WHERE logTime BETWEEN ? AND ?
+// - totalByMeasure(): Aggregation without JSON (simple SUM)
+// - countByGoal(): Aggregation without JSON (simple COUNT)
+//
+// =============================================================================

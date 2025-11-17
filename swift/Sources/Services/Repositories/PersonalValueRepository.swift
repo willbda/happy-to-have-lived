@@ -1,527 +1,471 @@
 //
-// PersonalValueRepository.swift
-// Written by Claude Code on 2025-11-08
-// Refactored to #sql pattern on 2025-11-10
-// Refactored to canonical PersonalValueData on 2025-11-16
+// PersonalValueRepository_v3.swift
+// Written by Claude Code on 2025-11-16
 //
 // PURPOSE:
-// Read coordinator for PersonalValue entities - centralizes query logic.
-// Complements PersonalValueCoordinator (writes) by handling all read operations.
+// Repository for PersonalValue entities using canonical PersonalValueData type.
+// Simpler than Action/Goal - fewer relationships, straightforward query pattern.
 //
-// RESPONSIBILITIES:
-// 1. Read operations - fetchAll(), fetchByLevel(), fetchById(), fetchByGoal()
-// 2. Existence checks - existsByTitle(), exists()
-// 3. Error mapping - DatabaseError → ValidationError
+// DESIGN DECISIONS:
+// - Extends BaseRepository<PersonalValueData> (no separate export type)
+// - Uses JSON aggregation for aligned goal IDs (1:many via goalRelevances)
+// - Relationship data: alignedGoalIds array collected via json_group_array
+// - Inherits: error mapping, read/write wrappers, date filtering, pagination
+// - Adds entity-specific: title uniqueness check, priority/level filtering
 //
-// QUERY PATTERN:
-// Uses SQLiteData's #sql macro for all queries.
-// - Type-safe SQL with compile-time table/column checking
-// - Direct SQL for clarity and performance
-// - FetchKeyRequest pattern for complex multi-value queries
-//
-// CANONICAL PATTERN:
-// - fetchAll() returns PersonalValueData (not PersonalValue)
-// - fetchAllLegacy() deprecated but available for backward compatibility
-// - PersonalValueData serves both display and export needs
+// INTERACTION WITH CORE:
+// - BaseRepository: Provides read/write wrappers, error mapping, pagination helpers
+// - QueryStrategies: Uses JSONAggregationStrategy (even though simple, for consistency)
+// - ExportSupport: Date filtering via DateFilter helper
+// - RepositoryProtocols: Conforms to Repository protocol (single DataType)
 //
 
 import Foundation
 import Models
 import SQLiteData
-import GRDB  // For StatementArguments, DatabaseValueConvertible, FetchableRecord
+import GRDB
 
-// MARK: - Export Types
-
-/// Denormalized personal value record for CSV/JSON export
+/// Repository for managing PersonalValue entities
 ///
-/// EXPORT PATTERN:
-/// - Flat structure (no nested objects) for CSV compatibility
-/// - All PersonalValue fields included
-/// - Computed statistics from database (alignedGoalCount)
-/// - Date filtering on logTime field
-///
-/// USAGE:
-/// ```swift
-/// let exports = try await repository.fetchForExport(
-///     from: Date().addingTimeInterval(-30 * 86400),  // Last 30 days
-///     to: Date()
-/// )
+/// **Architecture Pattern**:
 /// ```
-public struct PersonalValueExport: Codable, Sendable {
-    // Core identity
-    public let id: String  // UUID as string for CSV
-    public let title: String
-    public let detailedDescription: String?
-    public let freeformNotes: String?
-    public let logTime: String  // ISO8601 formatted
+/// PersonalValueRepository_v3 → BaseRepository<PersonalValueData> → Repository protocol
+///                            ↓
+///                     JSON Aggregation (aligned goal IDs)
+/// ```
+///
+/// **Simplicity vs Action/Goal**:
+/// - PersonalValue has ONE relationship (aligned goals via goalRelevances)
+/// - No nested structures like measurements/contributions
+/// - Still uses JSON aggregation for consistency with other repositories
+///
+/// **What BaseRepository Provides**:
+/// - ✅ Error mapping (mapDatabaseError)
+/// - ✅ Read/write wrappers with automatic error handling
+/// - ✅ Date filtering helpers (DateFilter)
+/// - ✅ Pagination (fetch(limit:offset:), fetchRecent(limit:))
+///
+/// **What This Repository Adds**:
+/// - Title uniqueness checks (exists(title:))
+/// - Priority-based filtering (fetchByPriority)
+/// - Value level filtering (fetchByValueLevel)
+/// - Goal alignment queries (fetchAlignedWith)
+/// - Life domain filtering (fetchByLifeDomain)
+///
+public final class PersonalValueRepository_v3: BaseRepository<PersonalValueData> {
 
-    // Value-specific fields
-    public let priority: Int
-    public let valueLevel: String  // ValueLevel.rawValue
-    public let lifeDomain: String?
-    public let alignmentGuidance: String?
+    // MARK: - Required Overrides
 
-    // Computed statistics
-    public let alignedGoalCount: Int  // Number of goals aligned with this value
-}
-
-// REMOVED @MainActor: Repository performs database queries which are I/O
-// operations that should run in background. Database reads should not block
-// the main thread. ViewModels will await results on main actor as needed.
-//
-// SENDABLE: Conforms to Sendable for Swift 6 strict concurrency.
-// Safe because:
-// - Only immutable property (private let database)
-// - All methods are async (thread-safe by nature)
-// - Can be safely passed from @MainActor ViewModels to background tasks
-public final class PersonalValueRepository: Sendable {
-    private let database: any DatabaseWriter
-
-    public init(database: any DatabaseWriter) {
-        self.database = database
-    }
-
-    // MARK: - Read Operations
-
-    /// Fetch all personal values ordered by priority (highest priority first) - LEGACY
+    /// Fetch all personal values with aligned goal IDs
     ///
-    /// - Warning: Deprecated. Use fetchAll() which returns canonical PersonalValueData.
-    @available(*, deprecated, renamed: "fetchAll", message: "Use fetchAll() which returns canonical PersonalValueData. Transform with .asValue if needed.")
-    public func fetchAllLegacy() async throws -> [PersonalValue] {
-        do {
-            return try await database.read { db in
-                try #sql(
-                    """
-                    SELECT \(PersonalValue.columns)
-                    FROM \(PersonalValue.self)
-                    ORDER BY \(PersonalValue.priority) DESC
-                    """,
-                    as: PersonalValue.self
-                ).fetchAll(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
+    /// **Implementation Strategy**: JSON aggregation with subquery
+    /// - Uses COALESCE + json_group_array for aligned goal IDs
+    /// - Single query (no N+1 problem)
+    /// - Returns PersonalValueData (canonical type)
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// SELECT pv.*,
+    ///   COALESCE(
+    ///     (SELECT json_group_array(goalId) FROM goalRelevances WHERE valueId = pv.id),
+    ///     '[]'
+    ///   ) as alignedGoalIdsJson
+    /// FROM personalValues pv
+    /// ORDER BY priority ASC
+    /// ```
+    public override func fetchAll() async throws -> [PersonalValueData] {
+        try await read { db in
+            let sql = """
+                SELECT
+                    pv.id,
+                    pv.title,
+                    pv.detailedDescription,
+                    pv.freeformNotes,
+                    pv.logTime,
+                    pv.priority,
+                    pv.valueLevel,
+                    pv.lifeDomain,
+                    pv.alignmentGuidance,
+                    COALESCE(
+                        (SELECT json_group_array(gr.goalId)
+                         FROM goalRelevances gr
+                         WHERE gr.valueId = pv.id),
+                        '[]'
+                    ) as alignedGoalIdsJson
+                FROM personalValues pv
+                ORDER BY pv.priority ASC
+                """
+
+            let rows = try ValueQueryRow.fetchAll(db, sql: sql)
+            return try rows.map { try self.assembleValueData(from: $0) }
         }
     }
 
-    /// Fetch all personal values as canonical PersonalValueData (for both display and export)
+    /// Check if personal value exists by ID
     ///
-    /// **CANONICAL PATTERN**: Returns PersonalValueData that's already Codable
-    /// **Usage**:
-    /// - Export: Use directly (already Codable)
-    /// - Display: Use PersonalValueData directly or transform with `.asValue` if needed
-    /// - ViewModels: Store PersonalValueData, not PersonalValue
-    ///
-    /// **Query Strategy**:
-    /// - Simple LEFT JOIN with goalRelevances for aligned goal IDs
-    /// - GROUP BY + json_group_array for denormalization
-    /// - No N+1 queries (single query fetches all data)
-    ///
-    /// - Parameters:
-    ///   - startDate: Optional filter for values created or modified after this date
-    ///   - endDate: Optional filter for values created or modified before this date
-    public func fetchAll(
-        from startDate: Date? = nil,
-        to endDate: Date? = nil
-    ) async throws -> [PersonalValueData] {
-        do {
-            return try await database.read { db in
-                try FetchAllPersonalValueDataRequest(
-                    startDate: startDate,
-                    endDate: endDate
-                ).fetch(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
+    /// **Implementation**: Simple COUNT query
+    /// Uses inherited `read` wrapper for automatic error mapping.
+    public override func exists(_ id: UUID) async throws -> Bool {
+        try await read { db in
+            let sql = "SELECT 1 FROM personalValues WHERE id = ? LIMIT 1"
+            return try Row.fetchOne(db, sql: sql, arguments: [id]) != nil
         }
     }
 
-    /// Fetch values of a specific level
-    public func fetchByLevel(_ level: ValueLevel) async throws -> [PersonalValue] {
-        do {
-            return try await database.read { db in
-                try #sql(
-                    """
-                    SELECT \(PersonalValue.columns)
-                    FROM \(PersonalValue.self)
-                    WHERE \(PersonalValue.valueLevel) = \(bind: level)
-                    ORDER BY \(PersonalValue.priority) DESC
-                    """,
-                    as: PersonalValue.self
-                ).fetchAll(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
+    /// Fetch values with optional date filtering (for export)
+    ///
+    /// **Implementation**: Same as fetchAll() + WHERE clause on logTime
+    /// Uses DateFilter helper from ExportSupport for consistent date filtering.
+    public override func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [PersonalValueData] {
+        try await read { db in
+            let dateFilter = DateFilter(startDate: startDate, endDate: endDate)
+            let (whereClause, arguments) = dateFilter.buildWhereClause(dateColumn: "pv.logTime")
+
+            let sql = """
+                SELECT
+                    pv.id,
+                    pv.title,
+                    pv.detailedDescription,
+                    pv.freeformNotes,
+                    pv.logTime,
+                    pv.priority,
+                    pv.valueLevel,
+                    pv.lifeDomain,
+                    pv.alignmentGuidance,
+                    COALESCE(
+                        (SELECT json_group_array(gr.goalId)
+                         FROM goalRelevances gr
+                         WHERE gr.valueId = pv.id),
+                        '[]'
+                    ) as alignedGoalIdsJson
+                FROM personalValues pv
+                \(whereClause)
+                ORDER BY pv.priority ASC
+                """
+
+            let rows = try ValueQueryRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            return try rows.map { try self.assembleValueData(from: $0) }
         }
     }
 
-    /// Fetch single value by ID
-    public func fetchById(_ id: UUID) async throws -> PersonalValue? {
-        do {
-            return try await database.read { db in
-                try #sql(
-                    """
-                    SELECT \(PersonalValue.columns)
-                    FROM \(PersonalValue.self)
-                    WHERE \(PersonalValue.id) = \(bind: id)
-                    """,
-                    as: PersonalValue.self
-                ).fetchOne(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
+    // MARK: - Entity-Specific Queries
+
+    /// Check if value with title already exists (case-insensitive)
+    ///
+    /// **Use Case**: Prevent duplicate "Family" values in validation
+    /// **Implementation**: SELECT COUNT WHERE LOWER(title) = LOWER(?)
+    ///
+    /// **Note**: Simpler than Action's compound check (title+date).
+    /// Values only need title uniqueness.
+    public func exists(title: String) async throws -> Bool {
+        try await read { db in
+            let sql = """
+                SELECT 1 FROM personalValues
+                WHERE LOWER(title) = LOWER(?)
+                LIMIT 1
+                """
+            return try Row.fetchOne(db, sql: sql, arguments: [title]) != nil
+        }
+    }
+
+    /// Fetch values by priority threshold
+    ///
+    /// **Use Case**: "Show all values with priority >= 8" for high-priority filtering
+    /// **Implementation**: WHERE priority >= ? ORDER BY priority DESC
+    public func fetchByPriority(minimumPriority: Int) async throws -> [PersonalValueData] {
+        try await read { db in
+            let sql = """
+                SELECT
+                    pv.id,
+                    pv.title,
+                    pv.detailedDescription,
+                    pv.freeformNotes,
+                    pv.logTime,
+                    pv.priority,
+                    pv.valueLevel,
+                    pv.lifeDomain,
+                    pv.alignmentGuidance,
+                    COALESCE(
+                        (SELECT json_group_array(gr.goalId)
+                         FROM goalRelevances gr
+                         WHERE gr.valueId = pv.id),
+                        '[]'
+                    ) as alignedGoalIdsJson
+                FROM personalValues pv
+                WHERE pv.priority >= ?
+                ORDER BY pv.priority ASC
+                """
+
+            let rows = try ValueQueryRow.fetchAll(db, sql: sql, arguments: [minimumPriority])
+            return try rows.map { try self.assembleValueData(from: $0) }
+        }
+    }
+
+    /// Fetch values by value level
+    ///
+    /// **Use Case**: "Show only highest_order values" or "Show all life_area values"
+    /// **Implementation**: WHERE valueLevel = ?
+    ///
+    /// **Value Levels**: general, major, highest_order, life_area
+    public func fetchByValueLevel(_ level: String) async throws -> [PersonalValueData] {
+        try await read { db in
+            let sql = """
+                SELECT
+                    pv.id,
+                    pv.title,
+                    pv.detailedDescription,
+                    pv.freeformNotes,
+                    pv.logTime,
+                    pv.priority,
+                    pv.valueLevel,
+                    pv.lifeDomain,
+                    pv.alignmentGuidance,
+                    COALESCE(
+                        (SELECT json_group_array(gr.goalId)
+                         FROM goalRelevances gr
+                         WHERE gr.valueId = pv.id),
+                        '[]'
+                    ) as alignedGoalIdsJson
+                FROM personalValues pv
+                WHERE pv.valueLevel = ?
+                ORDER BY pv.priority ASC
+                """
+
+            let rows = try ValueQueryRow.fetchAll(db, sql: sql, arguments: [level])
+            return try rows.map { try self.assembleValueData(from: $0) }
         }
     }
 
     /// Fetch values aligned with a specific goal
-    public func fetchByGoal(_ goalId: UUID) async throws -> [PersonalValue] {
-        do {
-            return try await database.read { db in
-                try #sql(
-                    """
-                    SELECT \(PersonalValue.columns)
-                    FROM \(PersonalValue.self)
-                    INNER JOIN \(GoalRelevance.self) ON \(PersonalValue.id) = \(GoalRelevance.valueId)
-                    WHERE \(GoalRelevance.goalId) = \(bind: goalId)
-                    ORDER BY \(PersonalValue.priority) DESC
-                    """,
-                    as: PersonalValue.self
-                ).fetchAll(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
+    ///
+    /// **Use Case**: "What values does this goal serve?" (inverse of alignedGoalIds)
+    /// **Implementation**: INNER JOIN with goalRelevances WHERE goalId = ?
+    ///
+    /// **Note**: This is the inverse query of PersonalValueData.alignedGoalIds.
+    /// While PersonalValueData stores "which goals align with this value",
+    /// this query answers "which values align with this goal".
+    public func fetchAlignedWith(goalId: UUID) async throws -> [PersonalValueData] {
+        try await read { db in
+            let sql = """
+                SELECT
+                    pv.id,
+                    pv.title,
+                    pv.detailedDescription,
+                    pv.freeformNotes,
+                    pv.logTime,
+                    pv.priority,
+                    pv.valueLevel,
+                    pv.lifeDomain,
+                    pv.alignmentGuidance,
+                    COALESCE(
+                        (SELECT json_group_array(gr.goalId)
+                         FROM goalRelevances gr
+                         WHERE gr.valueId = pv.id),
+                        '[]'
+                    ) as alignedGoalIdsJson
+                FROM personalValues pv
+                INNER JOIN goalRelevances gr ON pv.id = gr.valueId
+                WHERE gr.goalId = ?
+                ORDER BY pv.priority ASC
+                """
+
+            let rows = try ValueQueryRow.fetchAll(db, sql: sql, arguments: [goalId])
+            return try rows.map { try self.assembleValueData(from: $0) }
         }
     }
 
-    // MARK: - Export Operations (DEPRECATED)
-
-    /// Fetch denormalized export-ready data with optional date filtering - DEPRECATED
+    /// Fetch values by life domain
     ///
-    /// - Warning: Deprecated. Use fetchAll() which returns canonical PersonalValueData.
-    ///            PersonalValueData is already Codable and serves both display and export.
+    /// **Use Case**: "Show all health-related values" for domain-specific filtering
+    /// **Implementation**: WHERE lifeDomain = ?
     ///
-    /// Returns flat PersonalValueExport records optimized for CSV/JSON serialization.
-    /// Includes aligned goal count computed from goalRelevances table.
-    ///
-    /// - Parameters:
-    ///   - startDate: Optional filter for values created on or after this date
-    ///   - endDate: Optional filter for values created on or before this date
-    /// - Returns: Array of export-ready PersonalValueExport records
-    ///
-    /// QUERY STRATEGY:
-    /// - Uses LEFT JOIN to include values with zero aligned goals
-    /// - COUNT(goalRelevances.id) computes aligned goal count
-    /// - Date filtering on logTime field (when value was created)
-    /// - Results ordered by priority (highest first) for readability
-    ///
-    /// EXAMPLE:
-    /// ```swift
-    /// // OLD (deprecated):
-    /// let exports = try await repository.fetchForExport()
-    ///
-    /// // NEW (use instead):
-    /// let values = try await repository.fetchAll()
-    /// ```
-    @available(*, deprecated, message: "Use fetchAll() which returns canonical PersonalValueData. PersonalValueData is already Codable for export.")
-    public func fetchForExport(
-        from startDate: Date? = nil,
-        to endDate: Date? = nil
-    ) async throws -> [PersonalValueExport] {
-        do {
-            return try await database.read { db in
-                // Query for PersonalValue with aligned goal count
-                struct ExportRow: Decodable, FetchableRecord {
-                    let id: UUID
-                    let title: String?
-                    let detailedDescription: String?
-                    let freeformNotes: String?
-                    let logTime: Date
-                    let priority: Int?
-                    let valueLevel: ValueLevel
-                    let lifeDomain: String?
-                    let alignmentGuidance: String?
-                    let alignedGoalCount: Int
-                }
+    /// **Note**: lifeDomain is optional (can be NULL), so this only returns values with explicit domain
+    public func fetchByLifeDomain(_ domain: String) async throws -> [PersonalValueData] {
+        try await read { db in
+            let sql = """
+                SELECT
+                    pv.id,
+                    pv.title,
+                    pv.detailedDescription,
+                    pv.freeformNotes,
+                    pv.logTime,
+                    pv.priority,
+                    pv.valueLevel,
+                    pv.lifeDomain,
+                    pv.alignmentGuidance,
+                    COALESCE(
+                        (SELECT json_group_array(gr.goalId)
+                         FROM goalRelevances gr
+                         WHERE gr.valueId = pv.id),
+                        '[]'
+                    ) as alignedGoalIdsJson
+                FROM personalValues pv
+                WHERE pv.lifeDomain = ?
+                ORDER BY pv.priority ASC
+                """
 
-                // Build SQL with optional date filters
-                var sql = """
-                    SELECT
-                        pv.id,
-                        pv.title,
-                        pv.detailedDescription,
-                        pv.freeformNotes,
-                        pv.logTime,
-                        pv.priority,
-                        pv.valueLevel,
-                        pv.lifeDomain,
-                        pv.alignmentGuidance,
-                        COUNT(gr.id) as alignedGoalCount
-                    FROM personalValues pv
-                    LEFT JOIN goalRelevances gr ON pv.id = gr.valueId
-                    """
-
-                var arguments: [any DatabaseValueConvertible] = []
-
-                // Add date filters if provided
-                var whereClauses: [String] = []
-                if let startDate = startDate {
-                    whereClauses.append("pv.logTime >= ?")
-                    arguments.append(startDate)
-                }
-                if let endDate = endDate {
-                    whereClauses.append("pv.logTime <= ?")
-                    arguments.append(endDate)
-                }
-
-                if !whereClauses.isEmpty {
-                    sql += " WHERE " + whereClauses.joined(separator: " AND ")
-                }
-
-                sql += """
-
-                    GROUP BY pv.id
-                    ORDER BY pv.priority ASC
-                    """
-
-                // Execute query with bound parameters
-                let rows = try ExportRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
-
-                // Transform to export format
-                let iso8601 = ISO8601DateFormatter()
-                iso8601.formatOptions = [.withInternetDateTime]
-
-                return rows.map { row in
-                    PersonalValueExport(
-                        id: row.id.uuidString,
-                        title: row.title ?? "",
-                        detailedDescription: row.detailedDescription,
-                        freeformNotes: row.freeformNotes,
-                        logTime: iso8601.string(from: row.logTime),
-                        priority: row.priority ?? row.valueLevel.defaultPriority,
-                        valueLevel: row.valueLevel.rawValue,
-                        lifeDomain: row.lifeDomain,
-                        alignmentGuidance: row.alignmentGuidance,
-                        alignedGoalCount: row.alignedGoalCount
-                    )
-                }
-            }
-        } catch {
-            throw mapDatabaseError(error)
+            let rows = try ValueQueryRow.fetchAll(db, sql: sql, arguments: [domain])
+            return try rows.map { try self.assembleValueData(from: $0) }
         }
     }
 
-    // MARK: - Existence Checks
+    // MARK: - Error Mapping Override
 
-    /// Check if a value with this title already exists (case-insensitive)
-    public func existsByTitle(_ title: String) async throws -> Bool {
-        do {
-            return try await database.read { db in
-                try ExistsByTitleRequest(title: title).fetch(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
-        }
-    }
-
-    /// Check if a value exists by ID
-    public func exists(_ id: UUID) async throws -> Bool {
-        do {
-            return try await database.read { db in
-                try ExistsByIdRequest(id: id).fetch(db)
-            }
-        } catch {
-            throw mapDatabaseError(error)
-        }
-    }
-
-    // MARK: - Error Mapping
-
-    private func mapDatabaseError(_ error: Error) -> ValidationError {
+    /// Map database errors to user-friendly validation errors
+    ///
+    /// **PersonalValue-specific mappings**:
+    /// - UNIQUE constraint on title → duplicateRecord
+    /// - NOT NULL on title/priority/valueLevel → missingRequiredField
+    /// - FOREIGN KEY violations → foreignKeyViolation
+    public override func mapDatabaseError(_ error: Error) -> ValidationError {
         guard let dbError = error as? DatabaseError else {
             return .databaseConstraint(error.localizedDescription)
         }
 
+        let message = dbError.message ?? ""
+
+        // Check constraint type
         switch dbError.resultCode {
         case .SQLITE_CONSTRAINT_UNIQUE:
-            return .duplicateRecord("A value with this title already exists")
+            if message.contains("title") {
+                return .duplicateRecord("A value with this title already exists")
+            }
+            return .duplicateRecord("This value already exists")
+
         case .SQLITE_CONSTRAINT_NOTNULL:
-            let message = dbError.message ?? "Required field is missing"
+            if message.contains("title") {
+                return .missingRequiredField("Value title is required")
+            }
+            if message.contains("priority") {
+                return .missingRequiredField("Value priority is required")
+            }
+            if message.contains("valueLevel") {
+                return .missingRequiredField("Value level is required")
+            }
             return .missingRequiredField(message)
+
         case .SQLITE_CONSTRAINT_FOREIGNKEY:
             return .foreignKeyViolation("Referenced record no longer exists")
-        case .SQLITE_CONSTRAINT:
-            let message = dbError.message ?? "Database constraint violated"
+
+        case .SQLITE_CONSTRAINT_CHECK:
+            if message.contains("valueLevel") {
+                return .databaseConstraint("Invalid value level (must be: general, major, highest_order, or life_area)")
+            }
             return .databaseConstraint(message)
+
+        case .SQLITE_CONSTRAINT:
+            return .databaseConstraint(message)
+
+        case .SQLITE_BUSY, .SQLITE_LOCKED:
+            return .databaseConstraint("Database is temporarily unavailable. Please try again.")
+
         default:
             return .databaseConstraint(dbError.localizedDescription)
         }
     }
-}
 
-// MARK: - Fetch Requests
+    // MARK: - Private Helpers
 
-/// Fetch all personal values with aligned goal IDs
-///
-/// **QUERY PATTERN**: Single query with LEFT JOIN and json_group_array
-/// **Performance**: O(n) where n = number of values (no N+1 problem)
-///
-/// SQL Strategy:
-/// ```sql
-/// SELECT pv.*, COALESCE(json_group_array(gr.goalId), '[]') as alignedGoalIdsJson
-/// FROM personalValues pv
-/// LEFT JOIN goalRelevances gr ON pv.id = gr.valueId
-/// GROUP BY pv.id
-/// ORDER BY pv.priority ASC
-/// ```
-private struct FetchAllPersonalValueDataRequest: FetchKeyRequest {
-    typealias Value = [PersonalValueData]
-
-    let startDate: Date?
-    let endDate: Date?
-
-    func fetch(_ db: Database) throws -> [PersonalValueData] {
-        // Use raw SQL with json_group_array for efficient aggregation
-        var sql = """
-            SELECT
-                pv.id,
-                pv.title,
-                pv.detailedDescription,
-                pv.freeformNotes,
-                pv.logTime,
-                pv.priority,
-                pv.valueLevel,
-                pv.lifeDomain,
-                pv.alignmentGuidance,
-                COALESCE(
-                    (SELECT json_group_array(gr.goalId)
-                     FROM goalRelevances gr
-                     WHERE gr.valueId = pv.id),
-                    '[]'
-                ) as alignedGoalIdsJson
-            FROM personalValues pv
-            """
-
-        var arguments: [any DatabaseValueConvertible] = []
-
-        // Add date filters if provided
-        var whereClauses: [String] = []
-        if let startDate = startDate {
-            whereClauses.append("pv.logTime >= ?")
-            arguments.append(startDate)
-        }
-        if let endDate = endDate {
-            whereClauses.append("pv.logTime <= ?")
-            arguments.append(endDate)
-        }
-
-        if !whereClauses.isEmpty {
-            sql += " WHERE " + whereClauses.joined(separator: " AND ")
-        }
-
-        sql += "\nORDER BY pv.priority ASC"
-
-        // Define intermediate row type for decoding
-        struct ValueRow: Decodable, FetchableRecord {
-            let id: UUID
-            let title: String?
-            let detailedDescription: String?
-            let freeformNotes: String?
-            let logTime: Date
-            let priority: Int?
-            let valueLevel: ValueLevel
-            let lifeDomain: String?
-            let alignmentGuidance: String?
-            let alignedGoalIdsJson: String
-        }
-
-        // Execute query
-        let rows = try ValueRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
-
-        // Transform to PersonalValueData
-        return try rows.map { row in
-            // Parse JSON array of goal IDs
-            let alignedGoalIds: [UUID]
-            if let jsonData = row.alignedGoalIdsJson.data(using: .utf8),
-               let uuidStrings = try? JSONDecoder().decode([String].self, from: jsonData) {
+    /// Assemble PersonalValueData from query row
+    ///
+    /// **Pattern**: Parse alignedGoalIdsJson array from JSON aggregation
+    ///
+    /// **Simpler than GoalData**: Only one relationship to assemble (aligned goal IDs)
+    /// No nested structures like measurements or contributions.
+    ///
+    /// - Parameter row: ValueQueryRow with all PersonalValue fields + alignedGoalIdsJson
+    /// - Returns: Assembled PersonalValueData
+    /// - Throws: ValidationError if JSON parsing fails
+    private func assembleValueData(from row: ValueQueryRow) throws -> PersonalValueData {
+        // Parse aligned goal IDs from JSON array
+        let alignedGoalIds: [UUID]
+        if let jsonData = row.alignedGoalIdsJson.data(using: .utf8) {
+            do {
+                let uuidStrings = try JSONDecoder().decode([String].self, from: jsonData)
                 alignedGoalIds = uuidStrings.compactMap { UUID(uuidString: $0) }
-            } else {
-                alignedGoalIds = []
+            } catch {
+                throw ValidationError.databaseConstraint("Failed to parse aligned goal IDs: \(error.localizedDescription)")
             }
-
-            return PersonalValueData(
-                id: row.id,
-                title: row.title ?? "",
-                detailedDescription: row.detailedDescription,
-                freeformNotes: row.freeformNotes,
-                logTime: row.logTime,
-                priority: row.priority ?? row.valueLevel.defaultPriority,
-                valueLevel: row.valueLevel.rawValue,
-                lifeDomain: row.lifeDomain,
-                alignmentGuidance: row.alignmentGuidance,
-                alignedGoalIds: alignedGoalIds
-            )
+        } else {
+            alignedGoalIds = []
         }
+
+        return PersonalValueData(
+            id: row.id,
+            title: row.title,
+            detailedDescription: row.detailedDescription,
+            freeformNotes: row.freeformNotes,
+            logTime: row.logTime,
+            priority: row.priority,
+            valueLevel: row.valueLevel,
+            lifeDomain: row.lifeDomain,
+            alignmentGuidance: row.alignmentGuidance,
+            alignedGoalIds: alignedGoalIds
+        )
+    }
+
+    /// Query row structure matching SQL SELECT columns
+    ///
+    /// **Fields**:
+    /// - PersonalValue columns (id, title, detailedDescription, etc.)
+    /// - alignedGoalIdsJson: JSON array of UUID strings from json_group_array
+    ///
+    /// **Usage**: Intermediate struct for SQL → PersonalValueData transformation
+    private struct ValueQueryRow: Decodable, FetchableRecord, Sendable {
+        // PersonalValue fields (from personalValues table)
+        let id: UUID
+        let title: String
+        let detailedDescription: String?
+        let freeformNotes: String?
+        let logTime: Date
+        let priority: Int
+        let valueLevel: String
+        let lifeDomain: String?
+        let alignmentGuidance: String?
+
+        // Relationship data (JSON aggregated from goalRelevances)
+        let alignedGoalIdsJson: String  // JSON array of UUID strings: ["uuid1", "uuid2", ...]
     }
 }
 
-/// Check if a title exists (case-insensitive)
-private struct ExistsByTitleRequest: FetchKeyRequest {
-    typealias Value = Bool
-    let title: String
+// MARK: - Sendable Conformance
 
-    func fetch(_ db: Database) throws -> Bool {
-        let count = try #sql(
-            """
-            SELECT COUNT(*)
-            FROM \(PersonalValue.self)
-            WHERE LOWER(\(PersonalValue.title)) = LOWER(\(bind: title))
-            """,
-            as: Int.self
-        ).fetchOne(db) ?? 0
-        return count > 0
-    }
-}
+// PersonalValueRepository_v3 is Sendable because:
+// - Inherits from BaseRepository (already Sendable)
+// - No additional mutable state
+// - Safe to pass between actor boundaries
+extension PersonalValueRepository_v3: @unchecked Sendable {}
 
-/// Check if an ID exists
-private struct ExistsByIdRequest: FetchKeyRequest {
-    typealias Value = Bool
-    let id: UUID
-
-    func fetch(_ db: Database) throws -> Bool {
-        let count = try #sql(
-            """
-            SELECT COUNT(*)
-            FROM \(PersonalValue.self)
-            WHERE \(PersonalValue.id) = \(bind: id)
-            """,
-            as: Int.self
-        ).fetchOne(db) ?? 0
-        return count > 0
-    }
-}
-
-// MARK: - Implementation Notes
-
-// WHY #sql MACRO?
+// =============================================================================
+// IMPLEMENTATION NOTES
+// =============================================================================
 //
-// Benefits:
-// 1. Type Safety - Compile-time checking of table/column names via \(Type.column)
-// 2. SQL Clarity - Standard SQL is universally understood
-// 3. Performance - Direct SQL execution
-// 4. Power - Full SQL feature set (JOINs, CTEs, window functions)
-// 5. Security - Automatic SQL injection protection with \(bind:)
+// SIMPLICITY vs GOAL/ACTION:
+// PersonalValue has the simplest relationship graph:
+// - 1:many with goalRelevances (just goal IDs, no nested data)
+// - No measurement data (like Actions)
+// - No term assignments (like Goals)
+// - No contribution tracking
 //
-// Pattern:
-// - Simple queries: Direct #sql() calls in repository methods
-// - Complex queries: FetchKeyRequest structs for multi-value results
-// - All parameters use \(bind: value) for safe SQL injection prevention
-// - Error mapping ensures user-friendly messages (DatabaseError → ValidationError)
-
-// WHY FetchKeyRequest FOR EXISTENCE CHECKS?
+// This makes the query pattern straightforward:
+// 1. SELECT personalValue fields
+// 2. Use json_group_array subquery for aligned goal IDs
+// 3. Parse JSON array (just UUIDs, not nested objects)
+// 4. Assemble PersonalValueData
 //
-// While simple, existence checks benefit from FetchKeyRequest pattern:
-// - Encapsulates COUNT query logic
-// - Makes intent explicit (returns Bool, not Int)
-// - Easy to test in isolation
-// - Reusable if needed elsewhere
-// - Follows SQLiteData patterns
+// QUERY STRATEGY:
+// Uses JSON aggregation (like Goal/Action) for consistency, even though simple.
+// Alternative would be #sql macro with separate query for alignments, but
+// JSON aggregation provides:
+// - Single-query efficiency (no N+1)
+// - Consistency with other repositories
+// - Simpler code (no manual relationship assembly)
+//
+// ERROR MAPPING:
+// PersonalValue has fewer constraint types than Goal/Action:
+// - UNIQUE on title only (no compound constraints)
+// - NOT NULL on title/priority/valueLevel
+// - CHECK constraint on valueLevel enum
+// - No complex foreign key cascades
+//
+// =============================================================================

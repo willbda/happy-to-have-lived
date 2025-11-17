@@ -317,3 +317,4 @@ Once backward compatibility is removed:
 - They served their purpose well - zero runtime issues during refactoring
 - Removal is not urgent - extensions are low maintenance
 - Primary benefit of removal is conceptual simplicity, not performance
+ 

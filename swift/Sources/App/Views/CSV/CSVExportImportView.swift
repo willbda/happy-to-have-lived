@@ -19,6 +19,7 @@ struct CSVExportImportView: View {
     // MARK: - Entity Type Selection
 
     @State private var selectedEntityType: DomainModel = .actions
+    @State private var selectedFormat: Services.ExportFormat = .csv
 
     // MARK: - State
 
@@ -43,8 +44,20 @@ struct CSVExportImportView: View {
                     .accessibilityLabel("Select data type to export")
                 } header: {
                     Text("Export Type")
+                }
+
+                // Format picker
+                Section {
+                    Picker("Format", selection: $selectedFormat) {
+                        Text("CSV").tag(Services.ExportFormat.csv)
+                        Text("JSON").tag(Services.ExportFormat.json)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Select export format")
+                } header: {
+                    Text("Export Format")
                 } footer: {
-                    Text("Export raw data as text file for backup or analysis")
+                    Text("CSV: Spreadsheet-compatible, JSON: Structured data with full details")
                         .font(.caption)
                 }
 
@@ -102,7 +115,7 @@ struct CSVExportImportView: View {
         .fileExporter(
             isPresented: $showFileExporter,
             document: exportedFileURL.map { TextFileDocument(url: $0) },
-            contentType: .plainText,
+            contentType: contentType,
             defaultFilename: defaultFilename
         ) { result in
             handleExportCompletion(result)
@@ -112,7 +125,16 @@ struct CSVExportImportView: View {
     // MARK: - Computed Properties
 
     private var defaultFilename: String {
-        "\(selectedEntityType.displayName.lowercased())_export.txt"
+        "\(selectedEntityType.displayName.lowercased())_export.\(selectedFormat.fileExtension)"
+    }
+
+    private var contentType: UTType {
+        switch selectedFormat {
+        case .json:
+            return .json
+        case .csv:
+            return .commaSeparatedText
+        }
     }
 
     // MARK: - Export Operations
@@ -123,17 +145,18 @@ struct CSVExportImportView: View {
             defer { isExporting = false }
 
             do {
-                // Capture the entity type before async work
+                // Capture the entity type and format before async work
                 let entityType = selectedEntityType
+                let format = selectedFormat
 
                 // Create temporary directory for export
                 let tempDir = FileManager.default.temporaryDirectory
                     .appendingPathComponent(UUID().uuidString, isDirectory: true)
                 try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                // Export to temp location
+                // Export to temp location with selected format
                 let exporter = DataExporter(database: database)
-                let outputURL = try await exporter.exportToFile(entityType, to: tempDir, format: .csv)
+                let outputURL = try await exporter.exportToFile(entityType, to: tempDir, format: format)
 
                 // Store URL and show file exporter
                 exportedFileURL = outputURL

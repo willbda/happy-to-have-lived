@@ -34,7 +34,7 @@ import SwiftUI
 public struct PersonalValuesFormView: View {
     // MARK: - Edit Mode
 
-    let valueToEdit: PersonalValue?
+    let valueToEdit: PersonalValueData?
     var isEditMode: Bool { valueToEdit != nil }
     var formTitle: String { isEditMode ? "Edit Value" : "New Value" }
 
@@ -59,14 +59,14 @@ public struct PersonalValuesFormView: View {
 
     // MARK: - Initialization
 
-    public init(valueToEdit: PersonalValue? = nil) {
+    public init(valueToEdit: PersonalValueData? = nil) {
         self.valueToEdit = valueToEdit
 
         if let value = valueToEdit {
             // Edit mode - initialize from existing data
-            _title = State(initialValue: value.title ?? "")
-            _selectedLevel = State(initialValue: value.valueLevel)
-            _priority = State(initialValue: value.priority ?? 50)
+            _title = State(initialValue: value.title)
+            _selectedLevel = State(initialValue: ValueLevel(rawValue: value.valueLevel) ?? .general)
+            _priority = State(initialValue: value.priority)
             _description = State(initialValue: value.detailedDescription ?? "")
             _notes = State(initialValue: value.freeformNotes ?? "")
             _lifeDomain = State(initialValue: value.lifeDomain ?? "")
@@ -170,7 +170,7 @@ public struct PersonalValuesFormView: View {
 
                 if let valueToEdit = valueToEdit {
                     // Update existing value
-                    _ = try await viewModel.update(value: valueToEdit, from: formData)
+                    _ = try await viewModel.update(valueData: valueToEdit, from: formData)
                 } else {
                     // Create new value (using formData instead of individual parameters)
                     _ = try await viewModel.save(from: formData)
@@ -184,25 +184,4 @@ public struct PersonalValuesFormView: View {
     }
 }
 
-// MARK: - Previews
 
-#Preview("New Value") {
-    NavigationStack {
-        PersonalValuesFormView()
-    }
-}
-
-#Preview("Edit Value") {
-    NavigationStack {
-        PersonalValuesFormView(
-            valueToEdit: PersonalValue(
-                title: "Health & Vitality",
-                detailedDescription: "Physical and mental well-being",
-                priority: 90,
-                valueLevel: .major,
-                lifeDomain: "Health",
-                alignmentGuidance: "Choose actions that improve energy and longevity"
-            )
-        )
-    }
-}

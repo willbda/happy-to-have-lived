@@ -2,6 +2,7 @@
 // TermFormView.swift
 // Written by Claude Code on 2025-11-02
 // Rewritten by Claude Code on 2025-11-03 to follow Apple's SwiftUI patterns
+// Updated by Claude Code on 2025-11-16 - Migrated to canonical TimePeriodData
 //
 // PURPOSE: User-friendly form for creating/editing Terms (wraps generic TimePeriodFormViewModel)
 // PATTERN: Direct Form structure following Apple's documented SwiftUI patterns
@@ -31,9 +32,9 @@ public struct TermFormView: View {
     // MARK: - Edit Mode Support
 
     /// Term being edited (nil = create mode, not nil = edit mode)
-    private let termToEdit: (timePeriod: TimePeriod, goalTerm: GoalTerm)?
+    private let termToEdit: TimePeriodData?
 
-    /// Suggested next term number (from TermsListView's @Fetch data)
+    /// Suggested next term number (from TermsListView's data)
     /// Used only in create mode to auto-increment from existing terms
     private let suggestedTermNumber: Int?
 
@@ -72,24 +73,24 @@ public struct TermFormView: View {
     ///   - termToEdit: Existing term to edit (nil = create mode)
     ///   - suggestedTermNumber: Next term number from TermsListView (create mode only)
     public init(
-        termToEdit: (timePeriod: TimePeriod, goalTerm: GoalTerm)? = nil,
+        termToEdit: TimePeriodData? = nil,
         suggestedTermNumber: Int? = nil
     ) {
         self.termToEdit = termToEdit
         self.suggestedTermNumber = suggestedTermNumber
 
         // Initialize state from termToEdit or defaults
-        if let (timePeriod, goalTerm) = termToEdit {
+        if let term = termToEdit {
             // Edit mode - populate from existing term
-            _termNumber = State(initialValue: goalTerm.termNumber)
-            _startDate = State(initialValue: timePeriod.startDate)
-            _targetDate = State(initialValue: timePeriod.endDate)
-            _theme = State(initialValue: goalTerm.theme ?? "")
-            _reflection = State(initialValue: goalTerm.reflection ?? "")
-            _status = State(initialValue: goalTerm.status ?? .planned)
-            _title = State(initialValue: timePeriod.title ?? "")
-            _description = State(initialValue: timePeriod.detailedDescription ?? "")
-            _notes = State(initialValue: timePeriod.freeformNotes ?? "")
+            _termNumber = State(initialValue: term.termNumber)
+            _startDate = State(initialValue: term.startDate)
+            _targetDate = State(initialValue: term.endDate)
+            _theme = State(initialValue: term.theme ?? "")
+            _reflection = State(initialValue: term.reflection ?? "")
+            _status = State(initialValue: term.termStatus ?? .planned)
+            _title = State(initialValue: term.timePeriodTitle ?? "")
+            _description = State(initialValue: "")  // Not included in flat structure
+            _notes = State(initialValue: "")
         } else {
             // Create mode - use suggested number or default to 1
             _termNumber = State(initialValue: suggestedTermNumber ?? 1)
@@ -187,11 +188,10 @@ public struct TermFormView: View {
     private func handleSubmit() {
         Task {
             do {
-                if let (timePeriod, goalTerm) = termToEdit {
+                if let termData = termToEdit {
                     // Edit mode - update existing term
                     _ = try await viewModel.update(
-                        timePeriod: timePeriod,
-                        goalTerm: goalTerm,
+                        timePeriodData: termData,
                         startDate: startDate,
                         targetDate: targetDate,
                         specialization: .term(number: termNumber),
@@ -222,31 +222,3 @@ public struct TermFormView: View {
     }
 }
 
-// MARK: - Previews
-
-#Preview("New Term") {
-    NavigationStack {
-        TermFormView()
-    }
-}
-
-#Preview("Edit Term") {
-    NavigationStack {
-        TermFormView(
-            termToEdit: (
-                timePeriod: TimePeriod(
-                    title: "Spring Term",
-                    detailedDescription: "Focus on health and career",
-                    startDate: Date(),
-                    endDate: Calendar.current.date(byAdding: .weekOfYear, value: 10, to: Date())!
-                ),
-                goalTerm: GoalTerm(
-                    timePeriodId: UUID(),
-                    termNumber: 1,
-                    theme: "Health & Career Growth",
-                    status: .active
-                )
-            )
-        )
-    }
-}

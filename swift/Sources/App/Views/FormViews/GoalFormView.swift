@@ -2,6 +2,7 @@
 // GoalFormView.swift
 // Written by Claude Code on 2025-11-03
 // Rewritten by Claude Code on 2025-11-03 to follow Apple's SwiftUI patterns
+// Updated by Claude Code on 2025-11-16 - Migrated to canonical GoalData
 //
 // PURPOSE: Form for creating/editing Goals with full relationship support
 // PATTERN: Direct Form structure following Apple's documented SwiftUI patterns
@@ -23,14 +24,14 @@ import SwiftUI
 /// - Value alignments (multi-select)
 /// - Optional term assignment
 ///
-/// EDIT MODE: Initialize from GoalWithDetails
+/// EDIT MODE: Initialize from GoalData
 public struct GoalFormView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel = GoalFormViewModel()
 
     // MARK: - Edit Mode Support
 
-    private let goalToEdit: GoalWithDetails?
+    private let goalToEdit: GoalData?
 
     private var isEditMode: Bool {
         goalToEdit != nil
@@ -71,46 +72,46 @@ public struct GoalFormView: View {
 
     // MARK: - Initialization
 
-    public init(goalToEdit: GoalWithDetails? = nil) {
+    public init(goalToEdit: GoalData? = nil) {
         self.goalToEdit = goalToEdit
 
-        if let goalDetails = goalToEdit {
+        if let goal = goalToEdit {
             // Edit mode - initialize from existing goal
-            _title = State(initialValue: goalDetails.expectation.title ?? "")
-            _detailedDescription = State(initialValue: goalDetails.expectation.detailedDescription ?? "")
-            _freeformNotes = State(initialValue: goalDetails.expectation.freeformNotes ?? "")
-            _expectationImportance = State(initialValue: goalDetails.expectation.expectationImportance)
-            _expectationUrgency = State(initialValue: goalDetails.expectation.expectationUrgency)
+            _title = State(initialValue: goal.title ?? "")
+            _detailedDescription = State(initialValue: goal.detailedDescription ?? "")
+            _freeformNotes = State(initialValue: goal.freeformNotes ?? "")
+            _expectationImportance = State(initialValue: goal.expectationImportance)
+            _expectationUrgency = State(initialValue: goal.expectationUrgency)
 
-            _startDate = State(initialValue: goalDetails.goal.startDate ?? Date())
-            _targetDate = State(initialValue: goalDetails.goal.targetDate ?? Calendar.current.date(byAdding: .weekOfYear, value: 10, to: Date()) ?? Date())
-            _actionPlan = State(initialValue: goalDetails.goal.actionPlan ?? "")
-            _expectedTermLength = State(initialValue: goalDetails.goal.expectedTermLength ?? 10)
+            _startDate = State(initialValue: goal.startDate ?? Date())
+            _targetDate = State(initialValue: goal.targetDate ?? Calendar.current.date(byAdding: .weekOfYear, value: 10, to: Date()) ?? Date())
+            _actionPlan = State(initialValue: goal.actionPlan ?? "")
+            _expectedTermLength = State(initialValue: goal.expectedTermLength ?? 10)
 
             // Convert existing metric targets to input format
-            let targets = goalDetails.metricTargets.map { target in
+            let targets = goal.measureTargets.map { target in
                 MetricTargetInput(
                     id: target.id,
-                    measureId: target.expectationMeasure.measureId,
-                    targetValue: target.expectationMeasure.targetValue,
-                    notes: target.expectationMeasure.freeformNotes
+                    measureId: target.measureId,
+                    targetValue: target.targetValue,
+                    notes: target.freeformNotes
                 )
             }
             _metricTargets = State(initialValue: targets)
 
             // Convert existing value alignments to input format
-            let alignments = goalDetails.valueAlignments.map { alignment in
+            let alignments = goal.valueAlignments.map { alignment in
                 ValueAlignmentInput(
                     id: alignment.id,
-                    valueId: alignment.goalRelevance.valueId,
-                    alignmentStrength: alignment.goalRelevance.alignmentStrength ?? 5,
-                    relevanceNotes: alignment.goalRelevance.relevanceNotes
+                    valueId: alignment.valueId,
+                    alignmentStrength: alignment.alignmentStrength ?? 5,
+                    relevanceNotes: alignment.relevanceNotes
                 )
             }
             _valueAlignments = State(initialValue: alignments)
             _selectedValueIds = State(initialValue: Set(alignments.compactMap { $0.valueId }))
 
-            _selectedTermId = State(initialValue: goalDetails.termAssignment?.termId)
+            _selectedTermId = State(initialValue: goal.termAssignment?.termId)
         } else {
             // Create mode - use defaults
             _title = State(initialValue: "")
@@ -311,10 +312,10 @@ public struct GoalFormView: View {
     private func handleSubmit() {
         Task {
             do {
-                if let goalDetails = goalToEdit {
+                if let goalData = goalToEdit {
                     // Update existing goal
                     _ = try await viewModel.update(
-                        goalDetails: goalDetails,
+                        goalData: goalData,
                         title: title,
                         detailedDescription: detailedDescription,
                         freeformNotes: freeformNotes,
@@ -356,34 +357,3 @@ public struct GoalFormView: View {
 
 
 
-#Preview("New Goal") {
-    NavigationStack {
-        GoalFormView()
-    }
-}
-
-#Preview("Edit Goal") {
-    NavigationStack {
-        GoalFormView(
-            goalToEdit: GoalWithDetails(
-                goal: Goal(
-                    expectationId: UUID(),
-                    startDate: Date(),
-                    targetDate: Calendar.current.date(byAdding: .weekOfYear, value: 10, to: Date()),
-                    actionPlan: "Run 3x per week, track distance",
-                    expectedTermLength: 10
-                ),
-                expectation: Expectation(
-                    title: "Spring into Running",
-                    detailedDescription: "Build a consistent running habit",
-                    expectationType: .goal,
-                    expectationImportance: 8,
-                    expectationUrgency: 7
-                ),
-                metricTargets: [],
-                valueAlignments: [],
-                termAssignment: nil
-            )
-        )
-    }
-}

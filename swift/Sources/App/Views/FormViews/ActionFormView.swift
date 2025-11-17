@@ -2,6 +2,7 @@
 // ActionFormView.swift
 // Written by Claude Code on 2025-11-02
 // Rewritten by Claude Code on 2025-11-03 to follow Apple's SwiftUI patterns
+// Updated by Claude Code on 2025-11-16 - Migrated to canonical ActionData
 //
 // PURPOSE: Form for creating/editing Actions with measurements and goal contributions
 // PATTERN: Direct Form structure following Apple's documented SwiftUI patterns
@@ -34,7 +35,7 @@ private struct GoalOption: Identifiable {
 /// **Pattern**: Apple's direct Form approach (no FormScaffold wrapper)
 /// **Modes**:
 /// - Create: Default empty form
-/// - Edit: Pre-filled from existing ActionWithDetails
+/// - Edit: Pre-filled from existing ActionData
 /// - Quick Add: Pre-filled from ActionFormData (duplicate or log for goal)
 ///
 /// **Usage**:
@@ -46,7 +47,7 @@ private struct GoalOption: Identifiable {
 ///
 /// // Edit mode
 /// NavigationStack {
-///     ActionFormView(actionToEdit: actionDetails)
+///     ActionFormView(actionToEdit: actionData)
 /// }
 ///
 /// // Quick Add mode (from QuickAddSection)
@@ -57,7 +58,7 @@ private struct GoalOption: Identifiable {
 public struct ActionFormView: View {
     // MARK: - Edit Mode
 
-    let actionToEdit: ActionWithDetails?
+    let actionToEdit: ActionData?
     var isEditMode: Bool { actionToEdit != nil }
     var formTitle: String { isEditMode ? "Edit Action" : "New Action" }
 
@@ -101,33 +102,33 @@ public struct ActionFormView: View {
     /// ActionFormView(initialData: preFilledFormData)
     /// ```
     public init(
-        actionToEdit: ActionWithDetails? = nil,
+        actionToEdit: ActionData? = nil,
         initialData: ActionFormData? = nil
     ) {
         self.actionToEdit = actionToEdit
 
         if let actionToEdit = actionToEdit {
             // Edit mode - initialize from existing data
-            _title = State(initialValue: actionToEdit.action.title ?? "")
+            _title = State(initialValue: actionToEdit.title ?? "")
             _detailedDescription = State(
-                initialValue: actionToEdit.action.detailedDescription ?? "")
-            _freeformNotes = State(initialValue: actionToEdit.action.freeformNotes ?? "")
+                initialValue: actionToEdit.detailedDescription ?? "")
+            _freeformNotes = State(initialValue: actionToEdit.freeformNotes ?? "")
             _startTime = State(
-                initialValue: actionToEdit.action.startTime ?? actionToEdit.action.logTime)
-            _durationMinutes = State(initialValue: actionToEdit.action.durationMinutes ?? 0)
+                initialValue: actionToEdit.startTime ?? actionToEdit.logTime)
+            _durationMinutes = State(initialValue: actionToEdit.durationMinutes ?? 0)
 
             // Convert measurements to edit format
             let existingMeasurements = actionToEdit.measurements.map { measurement in
                 MeasurementInput(
-                    id: measurement.measuredAction.id,
-                    measureId: measurement.measuredAction.measureId,
-                    value: measurement.measuredAction.value
+                    id: measurement.id,
+                    measureId: measurement.measureId,
+                    value: measurement.value
                 )
             }
             _measurements = State(initialValue: existingMeasurements)
 
             // Convert contributions to Set<UUID>
-            let existingGoalIds = Set(actionToEdit.contributions.map { $0.contribution.goalId })
+            let existingGoalIds = Set(actionToEdit.contributions.map { $0.goalId })
             _selectedGoalIds = State(initialValue: existingGoalIds)
         } else if let initialData = initialData {
             // Quick Add mode - initialize from pre-filled form data
@@ -244,7 +245,7 @@ public struct ActionFormView: View {
                 if let actionToEdit = actionToEdit {
                     // Update existing action
                     _ = try await viewModel.update(
-                        actionDetails: actionToEdit,
+                        actionData: actionToEdit,
                         title: title,
                         description: detailedDescription,
                         notes: freeformNotes,
@@ -318,22 +319,23 @@ public struct ActionFormView: View {
 #Preview("Edit Action") {
     NavigationStack {
         ActionFormView(
-            actionToEdit: ActionWithDetails(
-                action: Action(
-                    title: "Morning run",
-                    detailedDescription: "Great weather",
-                    durationMinutes: 28,
-                    startTime: Date(),
-                    logTime: Date()
-                ),
+            actionToEdit: ActionData(
+                id: UUID(),
+                title: "Morning run",
+                detailedDescription: "Great weather",
+                freeformNotes: nil,
+                logTime: Date(),
+                durationMinutes: 28,
+                startTime: Date(),
                 measurements: [
-                    ActionMeasurement(
-                        measuredAction: MeasuredAction(
-                            actionId: UUID(),
-                            measureId: UUID(),
-                            value: 5.2
-                        ),
-                        measure: Measure(unit: "km", measureType: "distance", title: "Distance")
+                    ActionData.Measurement(
+                        id: UUID(),
+                        measureId: UUID(),
+                        measureTitle: "Distance",
+                        measureUnit: "km",
+                        measureType: "distance",
+                        value: 5.2,
+                        createdAt: Date()
                     )
                 ],
                 contributions: []

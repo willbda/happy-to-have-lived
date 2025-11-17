@@ -1,9 +1,10 @@
 //
 // GoalRowView.swift
 // Written by Claude Code on 2025-11-03
+// Updated by Claude Code on 2025-11-16 - Migrated to canonical GoalData
 //
 // PURPOSE: Display row for Goal with multi-metric progress and value alignment
-// RECEIVES: GoalWithDetails from parent (no database access here)
+// RECEIVES: GoalData from parent (canonical flat structure)
 // DISPLAYS: Title, dates, progress, value badges, status
 //
 
@@ -12,28 +13,28 @@ import SwiftUI
 
 /// Row view for goal display in lists
 ///
-/// PATTERN: Like TermRowView, receives full data from parent
-/// NO DATABASE ACCESS: All data passed via GoalWithDetails
+/// PATTERN: Receives canonical GoalData (flat structure, no nested entities)
+/// NO DATABASE ACCESS: All data passed via GoalData
 /// DISPLAYS:
-/// - Title from Expectation
-/// - Date range from Goal
-/// - Progress indicator (multi-metric)
-/// - Value alignment badges
+/// - Title (from flattened expectation fields)
+/// - Date range (from goal fields)
+/// - Progress indicator (multi-metric targets)
+/// - Value alignment badges (from denormalized value alignments)
 /// - Status indicator (on track, behind, completed)
 public struct GoalRowView: View {
-    let goalDetails: GoalWithDetails
+    let goal: GoalData
 
-    public init(goalDetails: GoalWithDetails) {
-        self.goalDetails = goalDetails
+    public init(goal: GoalData) {
+        self.goal = goal
     }
 
     private var dateRangeText: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
 
-        if let start = goalDetails.goal.startDate, let end = goalDetails.goal.targetDate {
+        if let start = goal.startDate, let end = goal.targetDate {
             return "\(formatter.string(from: start)) - \(formatter.string(from: end))"
-        } else if let end = goalDetails.goal.targetDate {
+        } else if let end = goal.targetDate {
             return "Due \(formatter.string(from: end))"
         } else {
             return "No due date"
@@ -45,10 +46,10 @@ public struct GoalRowView: View {
             // Title and importance/urgency
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(goalDetails.expectation.title ?? "Untitled Goal")
+                    Text(goal.title ?? "Untitled Goal")
                         .font(.headline)
 
-                    if let description = goalDetails.expectation.detailedDescription, !description.isEmpty {
+                    if let description = goal.detailedDescription, !description.isEmpty {
                         Text(description)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -63,7 +64,7 @@ public struct GoalRowView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "star.fill")
                             .font(.caption2)
-                        Text("\(goalDetails.expectation.expectationImportance)")
+                        Text("\(goal.expectationImportance)")
                             .font(.caption)
                     }
                     .foregroundStyle(.orange)
@@ -71,7 +72,7 @@ public struct GoalRowView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.circle.fill")
                             .font(.caption2)
-                        Text("\(goalDetails.expectation.expectationUrgency)")
+                        Text("\(goal.expectationUrgency)")
                             .font(.caption)
                     }
                     .foregroundStyle(.red)
@@ -79,25 +80,25 @@ public struct GoalRowView: View {
             }
 
             // Progress (if metrics exist)
-            if !goalDetails.metricTargets.isEmpty {
+            if !goal.measureTargets.isEmpty {
                 ProgressIndicator(
-                    metricTargets: goalDetails.metricTargets,
+                    measureTargets: goal.measureTargets,
                     actualProgress: [:],  // TODO: Calculate actual progress in Phase 2
                     displayMode: .compact
                 )
             }
 
             // Value alignments
-            if !goalDetails.valueAlignments.isEmpty {
+            if !goal.valueAlignments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(goalDetails.valueAlignments) { alignment in
+                        ForEach(goal.valueAlignments) { alignment in
                             HStack(spacing: 4) {
                                 Image(systemName: "heart.fill")
                                     .font(.caption2)
-                                Text(alignment.value.title ?? "Value")
+                                Text(alignment.valueTitle)
                                     .font(.caption)
-                                if let strength = alignment.goalRelevance.alignmentStrength {
+                                if let strength = alignment.alignmentStrength {
                                     Text("(\(strength))")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
@@ -132,45 +133,42 @@ public struct GoalRowView: View {
 #Preview("With Metrics and Values") {
     List {
         GoalRowView(
-            goalDetails: GoalWithDetails(
-                goal: Goal(
-                    expectationId: UUID(),
-                    startDate: Date(),
-                    targetDate: Calendar.current.date(byAdding: .weekOfYear, value: 10, to: Date()),
-                    actionPlan: "Run 3x per week"
-                ),
-                expectation: Expectation(
-                    title: "Spring into Running",
-                    detailedDescription: "Build running habit and endurance",
-                    expectationType: .goal,
-                    expectationImportance: 8,
-                    expectationUrgency: 5
-                ),
-                metricTargets: [
-                    ExpectationMeasureWithMetric(
-                        expectationMeasure: ExpectationMeasure(
-                            expectationId: UUID(),
-                            measureId: UUID(),
-                            targetValue: 120
-                        ),
-                        measure: Measure(unit: "km", measureType: "distance", title: "Distance")
+            goal: GoalData(
+                id: UUID(),
+                startDate: Date(),
+                targetDate: Calendar.current.date(byAdding: .weekOfYear, value: 10, to: Date()),
+                actionPlan: "Run 3x per week",
+                expectedTermLength: 10,
+                expectationId: UUID(),
+                title: "Spring into Running",
+                detailedDescription: "Build running habit and endurance",
+                freeformNotes: nil,
+                expectationImportance: 8,
+                expectationUrgency: 5,
+                logTime: Date(),
+                measureTargets: [
+                    GoalData.MeasureTarget(
+                        id: UUID(),
+                        measureId: UUID(),
+                        measureTitle: "Distance",
+                        measureUnit: "km",
+                        measureType: "distance",
+                        targetValue: 120,
+                        freeformNotes: nil,
+                        createdAt: Date()
                     )
                 ],
                 valueAlignments: [
-                    GoalRelevanceWithValue(
-                        goalRelevance: GoalRelevance(
-                            goalId: UUID(),
-                            valueId: UUID(),
-                            alignmentStrength: 9
-                        ),
-                        value: PersonalValue(
-                            title: "Health",
-                            priority: 10,
-                            valueLevel: .major,
-                            lifeDomain: "health"
-                        )
+                    GoalData.ValueAlignment(
+                        id: UUID(),
+                        valueId: UUID(),
+                        valueTitle: "Health",
+                        alignmentStrength: 9,
+                        relevanceNotes: nil,
+                        createdAt: Date()
                     )
-                ]
+                ],
+                termAssignment: nil
             )
         )
     }
@@ -179,18 +177,22 @@ public struct GoalRowView: View {
 #Preview("Minimal Goal") {
     List {
         GoalRowView(
-            goalDetails: GoalWithDetails(
-                goal: Goal(
-                    expectationId: UUID(),
-                    startDate: nil,
-                    targetDate: Date()
-                ),
-                expectation: Expectation(
-                    title: "Simple Goal",
-                    expectationType: .goal,
-                    expectationImportance: 5,
-                    expectationUrgency: 5
-                )
+            goal: GoalData(
+                id: UUID(),
+                startDate: nil,
+                targetDate: Date(),
+                actionPlan: nil,
+                expectedTermLength: nil,
+                expectationId: UUID(),
+                title: "Simple Goal",
+                detailedDescription: nil,
+                freeformNotes: nil,
+                expectationImportance: 5,
+                expectationUrgency: 5,
+                logTime: Date(),
+                measureTargets: [],
+                valueAlignments: [],
+                termAssignment: nil
             )
         )
     }

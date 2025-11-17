@@ -730,7 +730,8 @@ public final class GoalRepository: BaseRepository<GoalData> {
     /// **Source**: Copied from GoalRepository.swift assembleGoalData (lines 609-707)
     /// **Critical**: JSONDecoder date strategy must match SQLite format
     private func assembleGoalData(from row: GoalQueryRow) throws -> GoalData {
-        let decoder = JSONDecoder()
+        // Use BaseRepository's SQLite date decoder for JSON aggregation
+        let decoder = sqliteDateDecoder()
 
         // Parse goal and expectation IDs
         guard let goalUUID = UUID(uuidString: row.goalId) else {

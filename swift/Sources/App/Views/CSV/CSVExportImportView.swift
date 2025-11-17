@@ -12,6 +12,7 @@ import SwiftUI
 import SQLiteData
 import Dependencies
 import Services
+import Models
 
 struct CSVExportImportView: View {
     @Dependency(\.defaultDatabase) private var database
@@ -28,6 +29,18 @@ struct CSVExportImportView: View {
     @State private var showImportAlert = false
     @State private var showFileExporter = false
     @State private var exportedFileURL: URL?
+
+    // Import state
+    @State private var showFileImporter = false
+    @State private var isImporting = false
+    @State private var importResult: String = ""
+
+    // Import flow navigation
+    @State private var importRecordsActions: [ImportRecord<ActionData>]?
+    @State private var importRecordsGoals: [ImportRecord<GoalData>]?
+    @State private var importRecordsValues: [ImportRecord<PersonalValueData>]?
+    @State private var importRecordsPeriods: [ImportRecord<TimePeriodData>]?
+    @State private var finalImportResult: ImportResult?
 
     var body: some View {
         NavigationStack {
@@ -89,28 +102,43 @@ struct CSVExportImportView: View {
                     }
                 }
 
-                // Import section (disabled)
+                // Import section
                 Section("Import Data") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("CSV import with validation and preview")
+                        Text("Import \(selectedEntityType.displayName) with validation and preview")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        Button(action: { showImportAlert = true }) {
-                            Label("Import from CSV", systemImage: "doc.badge.arrow.up")
+                        Button(action: { showFileImporter = true }) {
+                            if isImporting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Label("Import \(selectedEntityType.displayName)", systemImage: "doc.badge.arrow.up")
+                            }
                         }
                         .buttonStyle(.bordered)
-                        .accessibilityLabel("Import data from CSV file")
+                        .disabled(isImporting)
+                        .accessibilityLabel("Import \(selectedEntityType.displayName) from file")
+
+                        if !importResult.isEmpty {
+                            Text(importResult)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 4)
+                        }
                     }
                 }
             }
             .formStyle(.grouped)
             .navigationTitle("Data Export & Import")
         }
-        .alert("Coming Soon", isPresented: $showImportAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("CSV import with validation and preview is currently under development. For now, you can export data as text files for backup purposes.")
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: [contentType],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportFileSelection(result)
         }
         .fileExporter(
             isPresented: $showFileExporter,
@@ -119,6 +147,58 @@ struct CSVExportImportView: View {
             defaultFilename: defaultFilename
         ) { result in
             handleExportCompletion(result)
+        }
+        // Import preview sheets
+        .sheet(isPresented: .constant(importRecordsActions != nil)) {
+            if let records = importRecordsActions {
+                ImportPreviewView(
+                    records: records,
+                    entityTypeName: "Actions",
+                    onConfirm: confirmActionsImport,
+                    onCancel: { importRecordsActions = nil }
+                )
+            }
+        }
+        .sheet(isPresented: .constant(importRecordsGoals != nil)) {
+            if let records = importRecordsGoals {
+                ImportPreviewView(
+                    records: records,
+                    entityTypeName: "Goals",
+                    onConfirm: confirmGoalsImport,
+                    onCancel: { importRecordsGoals = nil }
+                )
+            }
+        }
+        .sheet(isPresented: .constant(importRecordsValues != nil)) {
+            if let records = importRecordsValues {
+                ImportPreviewView(
+                    records: records,
+                    entityTypeName: "Personal Values",
+                    onConfirm: confirmValuesImport,
+                    onCancel: { importRecordsValues = nil }
+                )
+            }
+        }
+        .sheet(isPresented: .constant(importRecordsPeriods != nil)) {
+            if let records = importRecordsPeriods {
+                ImportPreviewView(
+                    records: records,
+                    entityTypeName: "Time Periods",
+                    onConfirm: confirmPeriodsImport,
+                    onCancel: { importRecordsPeriods = nil }
+                )
+            }
+        }
+        // Import result sheet
+        .sheet(item: $finalImportResult) { result in
+            ImportResultView(
+                result: result,
+                entityTypeName: selectedEntityType.displayName,
+                onDismiss: {
+                    finalImportResult = nil
+                    importResult = result.summaryMessage
+                }
+            )
         }
     }
 
@@ -185,6 +265,90 @@ struct CSVExportImportView: View {
         }
         exportedFileURL = nil
     }
+
+    // MARK: - Import Operations
+
+    private func handleImportFileSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let fileURL = urls.first else { return }
+
+            Task { @MainActor in
+                isImporting = true
+                defer { isImporting = false }
+
+                do {
+                    // Capture entity type and format
+                    let entityType = selectedEntityType
+                    let format = selectedFormat
+
+                    // Parse and validate using DataImporter
+                    let importer = DataImporter(database: database)
+
+                    switch entityType {
+                    case .actions:
+                        let records = try await importer.previewActions(from: fileURL, format: format)
+                        importRecordsActions = records
+
+                    case .goals:
+                        let records = try await importer.previewGoals(from: fileURL, format: format)
+                        importRecordsGoals = records
+
+                    case .values:
+                        let records = try await importer.previewPersonalValues(from: fileURL, format: format)
+                        importRecordsValues = records
+
+                    case .terms:
+                        let records = try await importer.previewTimePeriods(from: fileURL, format: format)
+                        importRecordsPeriods = records
+                    }
+
+                    importResult = ""  // Clear any previous errors
+
+                } catch {
+                    importResult = "⚠️ Import failed: \(error.localizedDescription)"
+                }
+            }
+
+        case .failure(let error):
+            importResult = "⚠️ File selection failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Confirm Import Handlers
+
+    private func confirmActionsImport(_ records: [ImportRecord<ActionData>]) async throws {
+        let importer = DataImporter(database: database)
+        let result = try await importer.confirmImportActions(records)
+
+        // Dismiss preview, show result
+        importRecordsActions = nil
+        finalImportResult = result
+    }
+
+    private func confirmGoalsImport(_ records: [ImportRecord<GoalData>]) async throws {
+        let importer = DataImporter(database: database)
+        let result = try await importer.confirmImportGoals(records)
+
+        importRecordsGoals = nil
+        finalImportResult = result
+    }
+
+    private func confirmValuesImport(_ records: [ImportRecord<PersonalValueData>]) async throws {
+        let importer = DataImporter(database: database)
+        let result = try await importer.confirmImportPersonalValues(records)
+
+        importRecordsValues = nil
+        finalImportResult = result
+    }
+
+    private func confirmPeriodsImport(_ records: [ImportRecord<TimePeriodData>]) async throws {
+        let importer = DataImporter(database: database)
+        let result = try await importer.confirmImportTimePeriods(records)
+
+        importRecordsPeriods = nil
+        finalImportResult = result
+    }
 }
 
 // MARK: - TextFileDocument
@@ -192,7 +356,10 @@ struct CSVExportImportView: View {
 import UniformTypeIdentifiers
 
 struct TextFileDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.plainText] }
+    static var readableContentTypes: [UTType] { [.plainText, .commaSeparatedText, .json] }
+
+    // ✅ CRITICAL: Declare all formats we export to avoid SwiftUI warning
+    static var writableContentTypes: [UTType] { [.plainText, .commaSeparatedText, .json] }
 
     let url: URL
 

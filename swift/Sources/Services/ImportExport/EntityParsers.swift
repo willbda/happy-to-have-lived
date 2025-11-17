@@ -350,19 +350,15 @@ public enum EntityParsers {
         let assignedGoalIds = try CSVParser.parseSemicolonUUIDs(row["AssignedGoals"] ?? "")
 
         return TimePeriodData(
-            id: id,
-            periodId: periodId,
-            periodTitle: periodTitle,
-            periodDescription: nil,  // Not exported in CSV
-            periodNotes: nil,        // Not exported in CSV
-            periodLogTime: Date(),   // Use current time (not available in CSV)
-            startDate: startDate,
-            endDate: endDate,
-            termId: id,              // Term ID = TimePeriodData ID
+            id: id,                    // GoalTerm.id
             termNumber: termNumber,
             theme: theme,
             reflection: reflection,
             status: status,
+            timePeriodId: periodId,
+            timePeriodTitle: periodTitle,
+            startDate: startDate,
+            endDate: endDate,
             assignedGoalIds: assignedGoalIds.isEmpty ? nil : assignedGoalIds
         )
     }

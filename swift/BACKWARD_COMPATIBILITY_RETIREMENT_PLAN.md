@@ -371,3 +371,24 @@ Once backward compatibility is removed:
 - They served their purpose well - zero runtime issues during refactoring
 - Removal is not urgent - extensions are low maintenance
 - Primary benefit of removal is conceptual simplicity, not performance
+
+---
+
+## Post-Completion Updates
+
+### Semantic Infrastructure Migration (2025-11-17)
+
+After backward compatibility retirement, the new semantic infrastructure was built directly on canonical types:
+
+**Files Updated**:
+- `SemanticDetectable.swift` - Protocol conformances use `GoalData`, `PersonalValueData`, `ActionData`
+- `SemanticGoalDetector.swift` - Migrated from `GoalWithExpectation` to `GoalData`
+- `CheckDuplicateGoalTool.swift` - Removed ~30 lines of conversion code
+- `CreateGoalTool.swift` - Removed ~30 lines of conversion code
+- `GoalCoordinator.swift` - Uses `GoalRepository.fetchAll()` instead of manual JOIN
+
+**Impact**: New semantic features built without any backward compatibility burden, eliminating ~60 lines of conversion code and simplifying architecture.
+
+**Commits**:
+- 069471d - refactor: Migrate SemanticGoalDetector to use canonical GoalData
+- a029727 - feat: Add generic semantic infrastructure for all entity types

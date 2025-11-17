@@ -16,11 +16,15 @@
 
       public var body: some View {
           TabView {
-              // Tab 1: Dashboard (Goal Progress Overview)
-              GoalProgressDashboardViewTEMP()
-                  .tabItem {
-                      Label("Dashboard", systemImage: "chart.bar.fill")
-                  }
+              // Tab 1: Dashboard (Coming Soon - Removed during v0.7 cleanup)
+              PlaceholderTab(
+                  icon: "chart.bar.fill",
+                  title: "Dashboard",
+                  subtitle: "Goal progress analytics coming soon"
+              )
+              .tabItem {
+                  Label("Dashboard", systemImage: "chart.bar.fill")
+              }
 
               // Tab 2: Actions (Phase 1 Complete - Full CRUD)
               NavigationStack {

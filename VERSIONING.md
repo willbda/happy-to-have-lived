@@ -14,7 +14,7 @@
 | 0.5.0 | 2025-10-25 | Foundation complete, rearchitecture needed | SQLiteData working, protocols defined, but needs structural rethink |
 | 0.6.0 | 2025-11-08 | Coordinator pattern complete | Phases 1-3 done: 3NF schema, models migrated, all 4 coordinators with full CRUD |
 | **0.6.5** | **2025-11-13** | **Repository + ViewModel complete** | All 4 entities migrated to @Observable pattern, repositories with Sendable, query wrappers eliminated |
-| **0.7.0** | **TBD** | **Testing + refinement** | Manual/automated testing, CSV enhancements, performance optimizations, bug fixes, **schema cleanup** ([#17](https://github.com/willbda/happy-to-have-lived/issues/17)) |
+| **0.7.0** | **TBD** | **Testing + refinement + canonical types** | Manual/automated testing, CSV enhancements, performance optimizations, bug fixes, **backward compat retirement** (Phases 1-2 complete), **schema cleanup** ([#17](https://github.com/willbda/happy-to-have-lived/issues/17)) |
 | **0.7.5** | **TBD** | **Semantic foundation + basic LLM** | Unified semantic layer for deduplication/search/LLM, conversational goal setting |
 
 ## Current Implementation Focus
@@ -161,6 +161,48 @@ CREATE INDEX idx_personal_values_title_lower ON personalValues(LOWER(title));
 
 **Note:** Core data flow (repositories with JSON aggregation) already excellent - these fixes target import workflows only.
 
+### v0.7.0 Backward Compatibility Retirement
+
+**Goal:** Eliminate dual type system (legacy entities vs canonical DataTypes)
+
+**Context:**
+During v0.6.5 repository migration, canonical DataTypes were introduced (GoalData, ActionData, PersonalValueData, TimePeriodData) as the authoritative representation from database queries. Legacy types (GoalWithDetails, ActionWithDetails, PersonalValue, TermWithPeriod) remained for backward compatibility during migration.
+
+**Problem:**
+- Two parallel type systems representing same entities
+- Transformation overhead (.asDetails, .asValue, .asWithPeriod)
+- Mental model complexity ("which type should I use?")
+- ~200 lines of compatibility code
+
+**Solution (4 phases):**
+1. ✅ **Phase 1 (2025-11-16)**: All views accept canonical types - **COMPLETE** (2 hours)
+   - Updated 8 view signatures (4 RowViews + 4 FormViews)
+   - Removed transformations from 4 ListViews
+2. 🔄 **Phase 2 (in progress)**: Update coordinator delete methods
+   - Refactor to accept canonical types directly
+   - Extract IDs, use cascade deletes
+   - Keep deprecated legacy methods temporarily
+   - **Estimated**: 55-80 minutes
+3. ⏳ **Phase 3**: Update 3 LLM tools to use GoalData
+   - **Estimated**: 2-3 hours
+4. ⏳ **Phase 4**: Remove all backward compat extensions
+   - Delete .asValue, .asDetails, .asWithPeriod
+   - Delete deprecated coordinator methods
+   - Verify zero usages with grep
+   - **Estimated**: 30-45 minutes
+
+**Total Effort:** 6-7 hours (revised from initial 9-12 hour estimate)
+
+**Benefits:**
+- Single type per entity (simpler mental model)
+- ~200 lines eliminated
+- No transformation overhead
+- Clearer architecture for future contributors
+
+**Reference:** `swift/BACKWARD_COMPATIBILITY_RETIREMENT_PLAN.md`
+
+---
+
 ### v0.7.0 Schema Cleanup
 
 **Goal:** Finalize schema design before v1.0.0 public launch
@@ -240,9 +282,9 @@ echo "✓ Version bumped to $NEW_VERSION"
 echo "Run 'git push && git push --tags' to publish"
 ```
 
-## Current Status Summary (Updated 2025-11-13)
+## Current Status Summary (Updated 2025-11-16)
 
-**Swift Implementation:** Phases 1-5 complete (v0.6.5)
+**Swift Implementation:** Phases 1-5 complete (v0.6.5), backward compat Phase 1 complete (v0.7.0 in progress)
 - ✅ Phase 1: 3NF schema designed and tested
 - ✅ Phase 2: Swift models migrated to SQLiteData
 - ✅ Phase 3: Coordinator pattern complete (ActionCoordinator, GoalCoordinator, PersonalValueCoordinator, TimePeriodCoordinator)
@@ -261,6 +303,14 @@ echo "Run 'git push && git push --tags' to publish"
   - ✅ All views use @State (not @StateObject)
   - ✅ All query wrappers eliminated (Queries/ directory empty)
   - Reference: `swift/docs/JSON_AGGREGATION_MIGRATION_PLAN.md`
+- 🔄 **Backward Compatibility Retirement (v0.7.0 in progress - started 2025-11-16)**
+  - ✅ Phase 1: All views accept canonical types (GoalData, ActionData, PersonalValueData, TimePeriodData)
+  - 🔄 Phase 2: Update coordinators to accept canonical types (in progress)
+  - ⏳ Phase 3: Update LLM tools to use GoalData
+  - ⏳ Phase 4: Remove backward compat extensions (.asValue, .asDetails, .asWithPeriod)
+  - Reference: `swift/BACKWARD_COMPATIBILITY_RETIREMENT_PLAN.md`
+  - **Goal**: Eliminate dual type system (legacy vs canonical), simplify architecture
+  - **Effort**: 6-7 hours total, 2 hours complete
 - ⏳ Phase 6: Views refinement & testing
 - ⏳ Phase 7: Testing & Migration
 - ❌ Design language: Liquid Glass foundation in place, refinement ongoing

@@ -1,7 +1,8 @@
 # Backward Compatibility Retirement Plan
 
 **Created**: 2025-11-16
-**Status**: Planning
+**Updated**: 2025-11-16 (Phase 1 Complete)
+**Status**: Phase 2 In Progress
 **Target**: v0.8.0 (after v0.7.0 testing phase)
 
 ## Overview
@@ -17,16 +18,16 @@ The canonical DataType refactoring introduced backward compatibility extensions 
 | Component | Location | Usage | Reason |
 |-----------|----------|-------|--------|
 | PersonalValuesRowView | `Views/RowViews/` | `let value: PersonalValue` | Display component expects entity |
-| PersonalValuesFormView | `Views/FormViews/` | `let valueToEdit: PersonalValue?` | Form component expects entity |
+| PersonalValu esFormView | `Views/FormViews/` | `let valueToEdit: PersonalValue?` | Form component expects entity |
 | PersonalValuesListViewModel | `ViewModels/` | `valueData.asValue` → coordinator | Coordinator expects entity for delete |
 | PersonalValuesListView | `Views/ListViews/` | Transform for row/form | Passes to child components |
 
 **Retirement Blockers**:
-- [ ] PersonalValuesRowView signature (`PersonalValue` → `PersonalValueData`)
-- [ ] PersonalValuesFormView signature (`PersonalValue?` → `PersonalValueData?`)
+- [x] PersonalValuesRowView signature (`PersonalValue` → `PersonalValueData`) ✅ Phase 1
+- [x] PersonalValuesFormView signature (`PersonalValue?` → `PersonalValueData?`) ✅ Phase 1
 - [ ] PersonalValueCoordinator.delete() signature (`PersonalValue` → `PersonalValueData`)
 
-**Dependencies**: 2 views + 1 coordinator = **3 components**
+**Dependencies**: ~~2 views~~ + 1 coordinator = **1 component** remaining
 
 ---
 
@@ -45,12 +46,12 @@ The canonical DataType refactoring introduced backward compatibility extensions 
 | CheckDuplicateGoalTool | `FoundationModels/Tools/` | `goalDataArray.map { $0.asDetails }` | LLM tool expects GoalWithDetails |
 
 **Retirement Blockers**:
-- [ ] GoalRowView signature (`GoalWithDetails` → `GoalData`)
-- [ ] GoalFormView signature (`GoalWithDetails?` → `GoalData?`)
+- [x] GoalRowView signature (`GoalWithDetails` → `GoalData`) ✅ Phase 1
+- [x] GoalFormView signature (`GoalWithDetails?` → `GoalData?`) ✅ Phase 1
 - [ ] GoalCoordinator.delete() signature (`GoalWithDetails` → `GoalData`)
 - [ ] LLM tool response types (3 tools)
 
-**Dependencies**: 2 views + 1 coordinator + 3 LLM tools = **6 components**
+**Dependencies**: ~~2 views~~ + 1 coordinator + 3 LLM tools = **4 components** remaining
 
 ---
 
@@ -66,11 +67,11 @@ The canonical DataType refactoring introduced backward compatibility extensions 
 | ActionsListView | `Views/ListViews/` | Transform for row/form + dashboard | Passes to child components |
 
 **Retirement Blockers**:
-- [ ] ActionRowView signature (`ActionWithDetails` → `ActionData`)
-- [ ] ActionFormView signature (`ActionWithDetails?` → `ActionData?`)
+- [x] ActionRowView signature (`ActionWithDetails` → `ActionData`) ✅ Phase 1
+- [x] ActionFormView signature (`ActionWithDetails?` → `ActionData?`) ✅ Phase 1
 - [ ] ActionCoordinator.delete() signature (`ActionWithDetails` → `ActionData`)
 
-**Dependencies**: 2 views + 1 coordinator = **3 components**
+**Dependencies**: ~~2 views~~ + 1 coordinator = **1 component** remaining
 
 ---
 
@@ -87,18 +88,19 @@ The canonical DataType refactoring introduced backward compatibility extensions 
 | TermsListView | `Views/ListViews/` | Transform for display | Passes to child components |
 
 **Retirement Blockers**:
-- [ ] TermRowView signature (separate entities → `TimePeriodData`)
-- [ ] TermFormView signature (tuple → `TimePeriodData?`)
+- [x] TermRowView signature (separate entities → `TimePeriodData`) ✅ Phase 1
+- [x] TermFormView signature (tuple → `TimePeriodData?`) ✅ Phase 1
 - [ ] TimePeriodCoordinator.delete() signature (separate entities → `TimePeriodData`)
 
-**Dependencies**: 2 views + 1 coordinator = **3 components**
+**Dependencies**: ~~2 views~~ + 1 coordinator = **1 component** remaining
 
 ---
 
 ## Retirement Strategy
 
-### Phase 1: Update Child Components (Views)
+### Phase 1: Update Child Components (Views) ✅ COMPLETE
 **Target**: v0.7.5
+**Status**: ✅ Complete (2025-11-16)
 **Risk**: Low (isolated view changes)
 
 Update row and form views to accept canonical types:
@@ -116,18 +118,22 @@ public struct PersonalValuesRowView: View {
 ```
 
 **Tasks**:
-1. Update 4 RowView signatures (Goals, Actions, Terms, Values)
-2. Update 4 FormView signatures (Goals, Actions, Terms, Values)
-3. Update view internals to work with canonical types
-4. Test all views thoroughly
+1. ✅ Update 4 RowView signatures (Goals, Actions, Terms, Values)
+2. ✅ Update 4 FormView signatures (Goals, Actions, Terms, Values)
+3. ✅ Update view internals to work with canonical types
+4. ✅ Update 4 ListViews to remove .asDetails/.asValue/.asWithPeriod transformations
 
-**Estimated Effort**: 4-6 hours
+**Completed**: All 8 views + 4 list views now accept canonical types directly
+
+**Actual Effort**: ~2 hours
 
 ---
 
-### Phase 2: Update Coordinators
+### Phase 2: Update Coordinators 🔄 IN PROGRESS
 **Target**: v0.7.5
+**Status**: 🔄 In Progress
 **Risk**: Medium (affects write operations)
+**Strategy**: Replace signatures + keep deprecated legacy methods as safety net
 
 Update coordinator delete methods to accept canonical types:
 
@@ -135,17 +141,35 @@ Update coordinator delete methods to accept canonical types:
 // BEFORE
 public func delete(value: PersonalValue) async throws
 
-// AFTER
-public func delete(value: PersonalValueData) async throws
+// AFTER (with safety net)
+public func delete(_ valueData: PersonalValueData) async throws {
+    try await database.write { db in
+        try PersonalValue.deleteOne(db, id: valueData.id)
+    }
+}
+
+@available(*, deprecated, message: "Use delete(_:PersonalValueData) instead")
+public func deleteLegacy(value: PersonalValue) async throws {
+    // Keep old implementation temporarily
+}
 ```
 
-**Tasks**:
-1. Update 4 coordinator delete signatures
-2. Extract entity data from canonical types internally
-3. Update all call sites in ViewModels
-4. Test delete operations thoroughly
+**Simplified Implementation** (thanks to ON DELETE CASCADE):
+- **GoalCoordinator**: Delete Goal + Expectation (2 calls, cascades handle rest)
+- **ActionCoordinator**: Delete Action (1 call, cascades handle rest)
+- **PersonalValueCoordinator**: Delete PersonalValue (1 call, cascades handle rest)
+- **TimePeriodCoordinator**: Delete GoalTerm + TimePeriod (2 calls, cascades handle rest)
 
-**Estimated Effort**: 2-3 hours
+**Tasks**:
+1. [ ] Verify current delete usage with grep
+2. [ ] Update GoalCoordinator.delete() → delete(_ goalData: GoalData)
+3. [ ] Update ActionCoordinator.delete() → delete(_ actionData: ActionData)
+4. [ ] Update PersonalValueCoordinator.delete() → delete(_ valueData: PersonalValueData)
+5. [ ] Update TimePeriodCoordinator.delete() → delete(_ timePeriodData: TimePeriodData)
+6. [ ] Update ViewModel delete calls (4 ViewModels)
+7. [ ] Test delete operations thoroughly
+
+**Estimated Effort**: 55-80 minutes (revised down from 2-3 hours due to cascade deletes)
 
 ---
 
@@ -176,6 +200,7 @@ let goals: [GoalData] = try await repository.fetchAll()
 
 ### Phase 4: Remove Backward Compatibility Extensions
 **Target**: v0.8.0
+**Status**: Pending Phase 2 & 3 completion
 **Risk**: Low (nothing should depend on them)
 
 Remove the `.asValue`, `.asDetails`, `.asWithPeriod` extensions:
@@ -196,11 +221,23 @@ public var asWithPeriod: TermWithPeriod { ... }
 
 **Safety Checks Before Removal**:
 ```bash
-# Should return NO results
-grep -r "\.asValue\|\.asDetails\|\.asWithPeriod" --include="*.swift" Sources/
+# Should return NO results (except extension definitions themselves)
+grep -r "\.asValue\|\.asDetails\|\.asWithPeriod" --include="*.swift" Sources/ | \
+  grep -v "extension.*{" | \
+  grep -v "public var as"
 ```
 
-**Estimated Effort**: 30 minutes
+**Tasks**:
+1. [ ] Run safety check grep command
+2. [ ] Remove deprecated deleteLegacy() methods from 4 coordinators
+3. [ ] Remove .asValue extension from PersonalValueData.swift
+4. [ ] Remove .asDetails extension from GoalData.swift
+5. [ ] Remove .asDetails extension from ActionData.swift
+6. [ ] Remove .asWithPeriod extension from TimePeriodData.swift
+7. [ ] Update QuickAddSection to accept [ActionData] (bonus)
+8. [ ] Final verification: grep reports 0 usages
+
+**Estimated Effort**: 30-45 minutes
 
 ---
 
@@ -239,8 +276,9 @@ else
 fi
 ```
 
-### Current Status (v0.6.5)
+### Current Status (v0.6.5 → v0.7.5)
 
+**Before Phase 1** (v0.6.5):
 ```
 Total usages: 29
 ├─ Views (RowViews + FormViews): 8 usages
@@ -250,19 +288,30 @@ Total usages: 29
 └─ Documentation/comments: 6 usages
 ```
 
+**After Phase 1 Complete** (v0.7.5 - 2025-11-16):
+```
+Total usages: ~13 (estimated)
+├─ Views (RowViews + FormViews): 0 usages ✅
+├─ ViewModels (delete transformations): 4 usages 🔄 Phase 2 target
+├─ ListView (display transformations): 0 usages ✅
+├─ LLM Tools (GoalWithDetails transformations): 3 usages ⏳ Phase 3 target
+└─ Extension definitions: 4 usages (will be removed in Phase 4)
+└─ Documentation/comments: ~2 usages
+```
+
 ---
 
 ## Success Criteria
 
 The backward compatibility extensions can be safely removed when:
 
-1. ✅ All RowViews accept canonical types (4/4)
-2. ✅ All FormViews accept canonical types (4/4)
-3. ✅ All Coordinators accept canonical types (4/4)
-4. ✅ All LLM Tools work with canonical types (3/3)
-5. ✅ `check_backward_compat_usage.sh` reports 0 usages
-6. ✅ All tests pass with updated signatures
-7. ✅ Manual testing confirms no regressions
+1. ✅ All RowViews accept canonical types (4/4) - **COMPLETE Phase 1**
+2. ✅ All FormViews accept canonical types (4/4) - **COMPLETE Phase 1**
+3. ⏳ All Coordinators accept canonical types (4/4) - **Phase 2 in progress**
+4. ⏳ All LLM Tools work with canonical types (3/3) - **Phase 3 pending**
+5. ⏳ `check_backward_compat_usage.sh` reports 0 usages - **Phase 4 verification**
+6. ⏳ All tests pass with updated signatures - **Phase 4 verification**
+7. ⏳ Manual testing confirms no regressions - **Phase 4 verification**
 
 ---
 
@@ -291,15 +340,17 @@ Once backward compatibility is removed:
 
 ## Timeline
 
-| Phase | Version | Duration | Risk |
-|-------|---------|----------|------|
-| Phase 1: Update Views | v0.7.5 | 4-6 hours | Low |
-| Phase 2: Update Coordinators | v0.7.5 | 2-3 hours | Medium |
-| Phase 3: Update LLM Tools | v0.8.0 | 2-3 hours | Low |
-| Phase 4: Remove Extensions | v0.8.0 | 30 min | Low |
-| **Total** | | **9-12 hours** | |
+| Phase | Version | Duration | Status | Risk |
+|-------|---------|----------|--------|------|
+| Phase 1: Update Views | v0.7.5 | ~~4-6 hours~~ **2 hours** | ✅ Complete | Low |
+| Phase 2: Update Coordinators | v0.7.5 | ~~2-3 hours~~ **55-80 min** | 🔄 In Progress | Medium |
+| Phase 3: Update LLM Tools | v0.8.0 | 2-3 hours | ⏳ Pending | Low |
+| Phase 4: Remove Extensions | v0.8.0 | 30-45 min | ⏳ Pending | Low |
+| **Total** | | ~~**9-12 hours**~~ **6-7 hours** | | |
 
-**Recommendation**: Execute Phases 1-2 together in v0.7.5, then Phases 3-4 in v0.8.0 after thorough testing.
+**Recommendation**: Execute Phases 1-2 together in v0.7.5 (3-4 hours total), then Phases 3-4 in v0.8.0 after thorough testing (2.5-3.5 hours).
+
+**Progress**: Phase 1 complete (2025-11-16), Phase 2 in progress.
 
 ---
 
@@ -317,4 +368,3 @@ Once backward compatibility is removed:
 - They served their purpose well - zero runtime issues during refactoring
 - Removal is not urgent - extensions are low maintenance
 - Primary benefit of removal is conceptual simplicity, not performance
- 

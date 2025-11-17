@@ -54,7 +54,7 @@ public final class GoalsListViewModel {
     // MARK: - Observable State (internal visibility)
 
     /// Goals data for display (canonical GoalData type)
-    /// Views can transform to GoalWithDetails using .asDetails if needed
+    /// Views use GoalData directly (no transformation needed)
     var goals: [GoalData] = []
 
     /// Loading state for UI feedback

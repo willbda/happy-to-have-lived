@@ -1,5 +1,5 @@
 //
-// TimePeriodRepository_v3.swift
+// TimePeriodRepository.swift
 // Written by Claude Code on 2025-11-16
 //
 // PURPOSE:
@@ -29,9 +29,9 @@ import GRDB
 ///
 /// **Architecture**:
 /// ```
-/// TimePeriodRepository_v3 → BaseRepository<TimePeriodData> → Repository protocol
-///                         ↓
-///                  Simple 1:1 JOIN (GoalTerm + TimePeriod)
+/// TimePeriodRepository → BaseRepository<TimePeriodData> → Repository protocol
+///                      ↓
+///              Simple 1:1 JOIN (GoalTerm + TimePeriod)
 /// ```
 ///
 /// **Simplicity vs Other Repositories**:
@@ -53,7 +53,7 @@ import GRDB
 /// - Date overlap detection (prevent conflicting terms)
 /// - Current term lookup (which term contains today?)
 ///
-public final class TimePeriodRepository_v3: BaseRepository<TimePeriodData> {
+public final class TimePeriodRepository: BaseRepository<TimePeriodData> {
 
     // MARK: - Required Overrides (BaseRepository)
 
@@ -374,7 +374,7 @@ public final class TimePeriodRepository_v3: BaseRepository<TimePeriodData> {
 // - No additional mutable state
 // - All methods are async (thread-safe)
 // - Safe to pass between actor boundaries
-extension TimePeriodRepository_v3: @unchecked Sendable {}
+extension TimePeriodRepository: @unchecked Sendable {}
 
 // =============================================================================
 // IMPLEMENTATION NOTES

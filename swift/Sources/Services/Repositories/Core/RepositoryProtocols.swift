@@ -28,7 +28,7 @@ import GRDB
 ///
 /// USAGE:
 /// ```swift
-/// class ActionRepository_v3: BaseRepository<ActionData> {
+/// class ActionRepository: BaseRepository<ActionData> {
 ///     // fetchAll() returns [ActionData]
 ///     // fetchForExport() also returns [ActionData] (same type, just filtered)
 /// }

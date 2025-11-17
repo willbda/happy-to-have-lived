@@ -89,8 +89,8 @@ public final class ActionsListViewModel {
 
     /// Repository for goal data access (for Quick Add active goals)
     @ObservationIgnored
-    private lazy var goalRepository: GoalRepository_v3 = {
-        GoalRepository_v3(database: database)
+    private lazy var goalRepository: GoalRepository = {
+        GoalRepository(database: database)
     }()
 
     // MARK: - Initialization
@@ -133,12 +133,18 @@ public final class ActionsListViewModel {
     /// **Performance**: Single JSON aggregation query via GoalRepository
     /// **Filtering**: SQL-side filtering (WHERE targetDate IS NULL OR targetDate >= date('now'))
     public func loadActiveGoals() async {
+        print("🔍 ActionsListViewModel: Starting to load active goals...")
         do {
             // Use specialized repository method (filters in SQL, not Swift)
             activeGoals = try await goalRepository.fetchActiveGoals()
+            print("✅ ActionsListViewModel: Loaded \(activeGoals.count) active goals")
         } catch {
             // Don't set errorMessage (Quick Add is optional feature)
             print("⚠️ ActionsListViewModel: Failed to load active goals: \(error)")
+            print("⚠️ Error type: \(type(of: error))")
+            if let validationError = error as? ValidationError {
+                print("⚠️ ValidationError details: \(validationError)")
+            }
         }
     }
 

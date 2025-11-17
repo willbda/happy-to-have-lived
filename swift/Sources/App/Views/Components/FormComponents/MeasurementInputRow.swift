@@ -59,6 +59,14 @@ public struct MeasurementInputRow: View {
                 ForEach(availableMeasures, id: \.id) { measure in
                     Text(measure.unit).tag(measure.id as UUID?)
                 }
+
+                // If current selection doesn't exist in available measures, add placeholder
+                if let selectedId = measureId,
+                   !availableMeasures.contains(where: { $0.id == selectedId }) {
+                    Text("(Deleted measure)")
+                        .foregroundStyle(.secondary)
+                        .tag(selectedId as UUID?)
+                }
             }
 
             // Value field with unit label (proper spacing, not cramped)

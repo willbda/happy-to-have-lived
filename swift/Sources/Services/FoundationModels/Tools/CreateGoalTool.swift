@@ -182,7 +182,7 @@ public struct CreateGoalTool: Tool {
         description: String?
     ) async throws -> DuplicateCheckResult {
         // Fetch existing goals (canonical GoalData)
-        let repository = GoalRepository_v3(database: database)
+        let repository = GoalRepository(database: database)
         let existingGoals = try await repository.fetchAll()
 
         // Try semantic checking first

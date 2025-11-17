@@ -71,6 +71,14 @@ public struct MetricTargetRow: View {
                     }
                     .tag(measure.id as UUID?)
                 }
+
+                // If current selection doesn't exist in available measures, add placeholder
+                if let selectedId = target.measureId,
+                   !availableMeasures.contains(where: { $0.id == selectedId }) {
+                    Text("(Deleted measure)")
+                        .foregroundStyle(.secondary)
+                        .tag(selectedId as UUID?)
+                }
             }
 
             // Target value field with unit label

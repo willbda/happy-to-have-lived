@@ -71,7 +71,7 @@ public struct CheckDuplicateGoalTool: Tool {
         let validThreshold = max(0.0, min(1.0, arguments.threshold))
 
         // Fetch existing goals (canonical GoalData)
-        let repository = GoalRepository_v3(database: database)
+        let repository = GoalRepository(database: database)
         let existingGoals = try await repository.fetchAll()
 
         // Check if no existing goals

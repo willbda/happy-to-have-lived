@@ -1,5 +1,5 @@
 //
-// PersonalValueRepository_v3.swift
+// PersonalValueRepository.swift
 // Written by Claude Code on 2025-11-16
 //
 // PURPOSE:
@@ -29,9 +29,9 @@ import GRDB
 ///
 /// **Architecture Pattern**:
 /// ```
-/// PersonalValueRepository_v3 → BaseRepository<PersonalValueData> → Repository protocol
-///                            ↓
-///                     JSON Aggregation (aligned goal IDs)
+/// PersonalValueRepository → BaseRepository<PersonalValueData> → Repository protocol
+///                         ↓
+///                  JSON Aggregation (aligned goal IDs)
 /// ```
 ///
 /// **Simplicity vs Action/Goal**:
@@ -52,7 +52,7 @@ import GRDB
 /// - Goal alignment queries (fetchAlignedWith)
 /// - Life domain filtering (fetchByLifeDomain)
 ///
-public final class PersonalValueRepository_v3: BaseRepository<PersonalValueData> {
+public final class PersonalValueRepository: BaseRepository<PersonalValueData> {
 
     // MARK: - Required Overrides
 
@@ -314,54 +314,25 @@ public final class PersonalValueRepository_v3: BaseRepository<PersonalValueData>
     /// Map database errors to user-friendly validation errors
     ///
     /// **PersonalValue-specific mappings**:
-    /// - UNIQUE constraint on title → duplicateRecord
-    /// - NOT NULL on title/priority/valueLevel → missingRequiredField
-    /// - FOREIGN KEY violations → foreignKeyViolation
+    /// - CHECK constraint on valueLevel → custom validation message
+    /// - All other constraints handled by BaseRepository
+    ///
+    /// **PATTERN**: Override only value-specific error cases, delegate rest to BaseRepository
     public override func mapDatabaseError(_ error: Error) -> ValidationError {
         guard let dbError = error as? DatabaseError else {
-            return .databaseConstraint(error.localizedDescription)
+            return super.mapDatabaseError(error)  // Delegate non-DB errors to base
         }
 
-        let message = dbError.message ?? ""
-
-        // Check constraint type
-        switch dbError.resultCode {
-        case .SQLITE_CONSTRAINT_UNIQUE:
-            if message.contains("title") {
-                return .duplicateRecord("A value with this title already exists")
-            }
-            return .duplicateRecord("This value already exists")
-
-        case .SQLITE_CONSTRAINT_NOTNULL:
-            if message.contains("title") {
-                return .missingRequiredField("Value title is required")
-            }
-            if message.contains("priority") {
-                return .missingRequiredField("Value priority is required")
-            }
-            if message.contains("valueLevel") {
-                return .missingRequiredField("Value level is required")
-            }
-            return .missingRequiredField(message)
-
-        case .SQLITE_CONSTRAINT_FOREIGNKEY:
-            return .foreignKeyViolation("Referenced record no longer exists")
-
-        case .SQLITE_CONSTRAINT_CHECK:
-            if message.contains("valueLevel") {
+        // Handle value-specific CHECK constraints (valueLevel enum validation)
+        if dbError.resultCode == .SQLITE_CONSTRAINT_CHECK {
+            if dbError.message?.contains("valueLevel") == true {
                 return .databaseConstraint("Invalid value level (must be: general, major, highest_order, or life_area)")
             }
-            return .databaseConstraint(message)
-
-        case .SQLITE_CONSTRAINT:
-            return .databaseConstraint(message)
-
-        case .SQLITE_BUSY, .SQLITE_LOCKED:
-            return .databaseConstraint("Database is temporarily unavailable. Please try again.")
-
-        default:
-            return .databaseConstraint(dbError.localizedDescription)
         }
+
+        // All other errors handled by base implementation
+        // (UNIQUE, NOTNULL, FOREIGNKEY, BUSY, LOCKED, etc.)
+        return super.mapDatabaseError(error)
     }
 
     // MARK: - Private Helpers
@@ -434,7 +405,7 @@ public final class PersonalValueRepository_v3: BaseRepository<PersonalValueData>
 // - Inherits from BaseRepository (already Sendable)
 // - No additional mutable state
 // - Safe to pass between actor boundaries
-extension PersonalValueRepository_v3: @unchecked Sendable {}
+extension PersonalValueRepository: @unchecked Sendable {}
 
 // =============================================================================
 // IMPLEMENTATION NOTES

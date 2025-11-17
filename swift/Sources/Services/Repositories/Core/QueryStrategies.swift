@@ -29,7 +29,7 @@ import GRDB
 ///
 /// EXAMPLE:
 /// ```swift
-/// final class ActionRepository_v3: BaseRepository<ActionData>, JSONAggregationStrategy {
+/// final class ActionRepository: BaseRepository<ActionData>, JSONAggregationStrategy {
 ///     typealias QueryRow = ActionQueryRow
 ///
 ///     var baseQuerySQL: String { "SELECT ..." }
@@ -152,7 +152,7 @@ public struct JSONAggregationHelper {
 ///
 /// EXAMPLE:
 /// ```swift
-/// final class PersonalValueRepository_v3: BaseRepository<PersonalValueData>, SQLMacroStrategy {
+/// final class PersonalValueRepository: BaseRepository<PersonalValueData>, SQLMacroStrategy {
 ///     override func fetchAll() async throws -> [PersonalValueData] {
 ///         try await read { db in
 ///             // Query returns PersonalValueData directly

@@ -64,7 +64,7 @@ public struct GetGoalsTool: Tool {
 
     public func call(arguments: Arguments) async throws -> GoalsResponse {
         // Create repository (use v3 for canonical GoalData)
-        let repository = GoalRepository_v3(database: database)
+        let repository = GoalRepository(database: database)
 
         // Fetch goals based on filters (uses canonical GoalData)
         let goals: [GoalData]

@@ -26,7 +26,7 @@ import GRDB
 ///
 /// USAGE:
 /// ```swift
-/// final class ActionRepository_v3: BaseRepository<ActionData> {
+/// final class ActionRepository: BaseRepository<ActionData> {
 ///     override func fetchAll() async throws -> [ActionData] {
 ///         try await read { db in
 ///             // Query returning ActionData

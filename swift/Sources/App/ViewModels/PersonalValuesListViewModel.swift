@@ -19,7 +19,7 @@
 // CANONICAL PATTERN:
 // - Stores PersonalValueData (not PersonalValue)
 // - Repository returns PersonalValueData directly
-// - Transform to PersonalValue at display boundary if needed (via .asValue)
+// - PersonalValueData is used directly by views (no transformation needed)
 //
 
 import Foundation

@@ -1,5 +1,5 @@
 //
-// ActionRepository_v3.swift
+// ActionRepository.swift
 // Written by Claude Code on 2025-11-16
 //
 // PURPOSE:
@@ -29,9 +29,9 @@ import GRDB
 ///
 /// **Architecture Pattern**:
 /// ```
-/// ActionRepository_v3 → BaseRepository<ActionData> → Repository protocol
-///                    ↓
-///         JSONAggregationStrategy (for measurements + contributions)
+/// ActionRepository → BaseRepository<ActionData> → Repository protocol
+///                  ↓
+///        JSONAggregationStrategy (for measurements + contributions)
 /// ```
 ///
 /// **What BaseRepository Provides**:
@@ -46,7 +46,7 @@ import GRDB
 /// - Compound uniqueness checks (exists(title:on:) - title + date)
 /// - JSON aggregation assembly (measurements + contributions → ActionData)
 ///
-public final class ActionRepository_v3: BaseRepository<ActionData> {
+public final class ActionRepository: BaseRepository<ActionData> {
 
     // MARK: - Required Overrides
 
@@ -428,45 +428,26 @@ public final class ActionRepository_v3: BaseRepository<ActionData> {
     /// - FOREIGN KEY on measureId → invalidMeasure
     /// - FOREIGN KEY on goalId → invalidGoal
     /// - NOT NULL on title/logTime → missingRequiredField
+    ///
+    /// **PATTERN**: Override only action-specific error cases, delegate rest to BaseRepository
     public override func mapDatabaseError(_ error: Error) -> ValidationError {
         guard let dbError = error as? DatabaseError else {
-            return .databaseConstraint(error.localizedDescription)
+            return super.mapDatabaseError(error)  // Delegate non-DB errors to base
         }
 
-        let message = dbError.message ?? ""
-
-        // Check constraint type
-        switch dbError.resultCode {
-        case .SQLITE_CONSTRAINT_FOREIGNKEY:
-            if message.contains("measureId") {
+        // Handle action-specific foreign key constraints
+        if dbError.resultCode == .SQLITE_CONSTRAINT_FOREIGNKEY {
+            if dbError.message?.contains("measureId") == true {
                 return .invalidMeasure("Measure not found")
             }
-            if message.contains("goalId") {
+            if dbError.message?.contains("goalId") == true {
                 return .invalidGoal("Goal not found")
             }
-            return .foreignKeyViolation("Referenced entity not found")
-
-        case .SQLITE_CONSTRAINT_UNIQUE:
-            return .duplicateRecord("This action already exists")
-
-        case .SQLITE_CONSTRAINT_NOTNULL:
-            if message.contains("title") {
-                return .missingRequiredField("Action title is required")
-            }
-            if message.contains("logTime") {
-                return .missingRequiredField("Action log time is required")
-            }
-            return .missingRequiredField(message)
-
-        case .SQLITE_CONSTRAINT:
-            return .databaseConstraint(message)
-
-        case .SQLITE_BUSY, .SQLITE_LOCKED:
-            return .databaseConstraint("Database is temporarily unavailable. Please try again.")
-
-        default:
-            return .databaseConstraint(dbError.localizedDescription)
         }
+
+        // All other errors handled by base implementation
+        // (UNIQUE, NOTNULL, BUSY, LOCKED, etc.)
+        return super.mapDatabaseError(error)
     }
 
     // MARK: - Private Helpers
@@ -615,7 +596,7 @@ public final class ActionRepository_v3: BaseRepository<ActionData> {
 // - Inherits from BaseRepository (already Sendable)
 // - No additional mutable state
 // - Safe to pass between actor boundaries
-extension ActionRepository_v3: @unchecked Sendable {}
+extension ActionRepository: @unchecked Sendable {}
 
 // =============================================================================
 // IMPLEMENTATION NOTES

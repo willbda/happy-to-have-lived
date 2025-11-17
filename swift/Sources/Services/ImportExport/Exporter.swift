@@ -69,19 +69,19 @@ public final class DataExporter {
         switch model {
         case .actions:
             let repository = ActionRepository(database: database)
-            let actions = try await repository.fetchAll(from: startDate, to: endDate)
+            let actions = try await repository.fetchForExport(from: startDate, to: endDate)
             return try formatData(actions, format: format, csvFormatter: csvFormatter.formatActions)
 
         case .goals:
             let repository = GoalRepository(database: database)
             // Use canonical GoalData directly for both display and export
-            let goals = try await repository.fetchAll(from: startDate, to: endDate)
+            let goals = try await repository.fetchForExport(from: startDate, to: endDate)
             return try formatData(goals, format: format, csvFormatter: csvFormatter.formatGoals)
 
         case .values:
             let repository = PersonalValueRepository(database: database)
             // Use canonical PersonalValueData directly for both display and export
-            let values = try await repository.fetchAll(from: startDate, to: endDate)
+            let values = try await repository.fetchForExport(from: startDate, to: endDate)
             return try formatData(values, format: format, csvFormatter: csvFormatter.formatValues)
 
         case .terms:

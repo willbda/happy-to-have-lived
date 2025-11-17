@@ -1,5 +1,5 @@
 //
-// GoalRepository_v3.swift
+// GoalRepository.swift
 // Written by Claude Code on 2025-11-16
 //
 // PURPOSE:
@@ -29,9 +29,9 @@ import GRDB
 ///
 /// **Architecture**:
 /// ```
-/// GoalRepository_v3 → BaseRepository<GoalData> → Repository protocol
-///                   ↓
-///        JSON Aggregation (3 relationships: measures + values + terms)
+/// GoalRepository → BaseRepository<GoalData> → Repository protocol
+///                ↓
+///       JSON Aggregation (3 relationships: measures + values + terms)
 /// ```
 ///
 /// **What BaseRepository Provides**:
@@ -45,7 +45,7 @@ import GRDB
 /// - Entity-specific queries (active, byTerm, byValue, withProgress)
 /// - Title uniqueness checks via expectations table
 ///
-public final class GoalRepository_v3: BaseRepository<GoalData> {
+public final class GoalRepository: BaseRepository<GoalData> {
 
     // MARK: - Required Overrides (BaseRepository)
 
@@ -129,17 +129,20 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
                 ) as valuesJson,
 
                 -- Term assignment (single object, most recent)
-                (
-                    SELECT json_object(
-                        'assignmentId', tga.id,
-                        'termId', tga.termId,
-                        'assignmentOrder', tga.assignmentOrder,
-                        'createdAt', tga.createdAt
-                    )
-                    FROM termGoalAssignments tga
-                    WHERE tga.goalId = g.id
-                    ORDER BY tga.createdAt DESC
-                    LIMIT 1
+                COALESCE(
+                    (
+                        SELECT json_object(
+                            'assignmentId', tga.id,
+                            'termId', tga.termId,
+                            'assignmentOrder', tga.assignmentOrder,
+                            'createdAt', tga.createdAt
+                        )
+                        FROM termGoalAssignments tga
+                        WHERE tga.goalId = g.id
+                        ORDER BY tga.createdAt DESC
+                        LIMIT 1
+                    ),
+                    'null'
                 ) as termAssignmentJson
 
             FROM goals g
@@ -253,17 +256,20 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
                 ) as valuesJson,
 
                 -- Term assignment (single object)
-                (
-                    SELECT json_object(
-                        'assignmentId', tga.id,
-                        'termId', tga.termId,
-                        'assignmentOrder', tga.assignmentOrder,
-                        'createdAt', tga.createdAt
-                    )
-                    FROM termGoalAssignments tga
-                    WHERE tga.goalId = g.id
-                    ORDER BY tga.createdAt DESC
-                    LIMIT 1
+                COALESCE(
+                    (
+                        SELECT json_object(
+                            'assignmentId', tga.id,
+                            'termId', tga.termId,
+                            'assignmentOrder', tga.assignmentOrder,
+                            'createdAt', tga.createdAt
+                        )
+                        FROM termGoalAssignments tga
+                        WHERE tga.goalId = g.id
+                        ORDER BY tga.createdAt DESC
+                        LIMIT 1
+                    ),
+                    'null'
                 ) as termAssignmentJson
 
             FROM goals g
@@ -339,12 +345,15 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
                     )) FROM goalRelevances gr JOIN personalValues v ON gr.valueId = v.id WHERE gr.goalId = g.id),
                     '[]'
                 ) as valuesJson,
-                (SELECT json_object(
-                    'assignmentId', tga.id,
-                    'termId', tga.termId,
-                    'assignmentOrder', tga.assignmentOrder,
-                    'createdAt', tga.createdAt
-                ) FROM termGoalAssignments tga WHERE tga.goalId = g.id ORDER BY tga.createdAt DESC LIMIT 1) as termAssignmentJson
+                COALESCE(
+                    (SELECT json_object(
+                        'assignmentId', tga.id,
+                        'termId', tga.termId,
+                        'assignmentOrder', tga.assignmentOrder,
+                        'createdAt', tga.createdAt
+                    ) FROM termGoalAssignments tga WHERE tga.goalId = g.id ORDER BY tga.createdAt DESC LIMIT 1),
+                    'null'
+                ) as termAssignmentJson
             FROM goals g
             JOIN expectations e ON g.expectationId = e.id
             ORDER BY g.targetDate ASC NULLS LAST
@@ -412,12 +421,15 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
                     )) FROM goalRelevances gr JOIN personalValues v ON gr.valueId = v.id WHERE gr.goalId = g.id),
                     '[]'
                 ) as valuesJson,
-                (SELECT json_object(
-                    'assignmentId', tga.id,
-                    'termId', tga.termId,
-                    'assignmentOrder', tga.assignmentOrder,
-                    'createdAt', tga.createdAt
-                ) FROM termGoalAssignments tga WHERE tga.goalId = g.id ORDER BY tga.createdAt DESC LIMIT 1) as termAssignmentJson
+                COALESCE(
+                    (SELECT json_object(
+                        'assignmentId', tga.id,
+                        'termId', tga.termId,
+                        'assignmentOrder', tga.assignmentOrder,
+                        'createdAt', tga.createdAt
+                    ) FROM termGoalAssignments tga WHERE tga.goalId = g.id ORDER BY tga.createdAt DESC LIMIT 1),
+                    'null'
+                ) as termAssignmentJson
             FROM goals g
             JOIN expectations e ON g.expectationId = e.id
             ORDER BY e.logTime DESC
@@ -469,8 +481,33 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
                     )) FROM expectationMeasures em JOIN measures m ON em.measureId = m.id WHERE em.expectationId = e.id),
                     '[]'
                 ) as measuresJson,
-                '[]' as valuesJson,
-                NULL as termAssignmentJson
+                COALESCE(
+                    (SELECT json_group_array(json_object(
+                        'relevanceId', gr.id,
+                        'alignmentStrength', gr.alignmentStrength,
+                        'relevanceNotes', gr.relevanceNotes,
+                        'valueId', v.id,
+                        'valueTitle', v.title,
+                        'valueDetailedDescription', v.detailedDescription,
+                        'valueFreeformNotes', v.freeformNotes,
+                        'valuePriority', v.priority,
+                        'valueLevel', v.valueLevel,
+                        'valueLifeDomain', v.lifeDomain,
+                        'valueAlignmentGuidance', v.alignmentGuidance,
+                        'valueLogTime', v.logTime,
+                        'relevanceCreatedAt', gr.createdAt
+                    )) FROM goalRelevances gr JOIN personalValues v ON gr.valueId = v.id WHERE gr.goalId = g.id),
+                    '[]'
+                ) as valuesJson,
+                COALESCE(
+                    (SELECT json_object(
+                        'assignmentId', tga.id,
+                        'termId', tga.termId,
+                        'assignmentOrder', tga.assignmentOrder,
+                        'createdAt', tga.createdAt
+                    ) FROM termGoalAssignments tga WHERE tga.goalId = g.id ORDER BY tga.createdAt DESC LIMIT 1),
+                    'null'
+                ) as termAssignmentJson
             FROM goals g
             JOIN expectations e ON g.expectationId = e.id
             WHERE g.targetDate IS NULL OR g.targetDate >= date('now')
@@ -538,12 +575,15 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
                     )) FROM goalRelevances gr JOIN personalValues v ON gr.valueId = v.id WHERE gr.goalId = g.id),
                     '[]'
                 ) as valuesJson,
-                (SELECT json_object(
-                    'assignmentId', tga.id,
-                    'termId', tga.termId,
-                    'assignmentOrder', tga.assignmentOrder,
-                    'createdAt', tga.createdAt
-                ) FROM termGoalAssignments tga WHERE tga.goalId = g.id AND tga.termId = ? ORDER BY tga.createdAt DESC LIMIT 1) as termAssignmentJson
+                COALESCE(
+                    (SELECT json_object(
+                        'assignmentId', tga.id,
+                        'termId', tga.termId,
+                        'assignmentOrder', tga.assignmentOrder,
+                        'createdAt', tga.createdAt
+                    ) FROM termGoalAssignments tga WHERE tga.goalId = g.id AND tga.termId = ? ORDER BY tga.createdAt DESC LIMIT 1),
+                    'null'
+                ) as termAssignmentJson
             FROM goals g
             JOIN expectations e ON g.expectationId = e.id
             INNER JOIN termGoalAssignments tga ON g.id = tga.goalId
@@ -613,12 +653,15 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
                     )) FROM goalRelevances gr JOIN personalValues v ON gr.valueId = v.id WHERE gr.goalId = g.id),
                     '[]'
                 ) as valuesJson,
-                (SELECT json_object(
-                    'assignmentId', tga.id,
-                    'termId', tga.termId,
-                    'assignmentOrder', tga.assignmentOrder,
-                    'createdAt', tga.createdAt
-                ) FROM termGoalAssignments tga WHERE tga.goalId = g.id ORDER BY tga.createdAt DESC LIMIT 1) as termAssignmentJson
+                COALESCE(
+                    (SELECT json_object(
+                        'assignmentId', tga.id,
+                        'termId', tga.termId,
+                        'assignmentOrder', tga.assignmentOrder,
+                        'createdAt', tga.createdAt
+                    ) FROM termGoalAssignments tga WHERE tga.goalId = g.id ORDER BY tga.createdAt DESC LIMIT 1),
+                    'null'
+                ) as termAssignmentJson
             FROM goals g
             JOIN expectations e ON g.expectationId = e.id
             WHERE g.id IN (
@@ -675,12 +718,8 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
             }
         }
 
-        // Handle unique constraint for goal titles
-        if dbError.resultCode == .SQLITE_CONSTRAINT_UNIQUE {
-            return .duplicateRecord("A goal with this title already exists")
-        }
-
-        // Fall back to base implementation for generic errors
+        // All other errors handled by base implementation
+        // (UNIQUE, NOTNULL, BUSY, LOCKED, etc.)
         return super.mapDatabaseError(error)
     }
 
@@ -703,7 +742,9 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
         }
 
         // Parse measures JSON
-        let measuresData = row.measuresJson.data(using: .utf8)!
+        guard let measuresData = row.measuresJson.data(using: .utf8) else {
+            throw ValidationError.databaseConstraint("Invalid UTF-8 in measures JSON for goal \(row.goalId)")
+        }
         let measuresJson = try decoder.decode([MeasureJsonRow].self, from: measuresData)
 
         let measureTargets: [GoalData.MeasureTarget] = try measuresJson.map { m in
@@ -725,7 +766,9 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
         }
 
         // Parse values JSON
-        let valuesData = row.valuesJson.data(using: .utf8)!
+        guard let valuesData = row.valuesJson.data(using: .utf8) else {
+            throw ValidationError.databaseConstraint("Invalid UTF-8 in values JSON for goal \(row.goalId)")
+        }
         let valuesJson = try decoder.decode([ValueJsonRow].self, from: valuesData)
 
         let valueAlignments: [GoalData.ValueAlignment] = try valuesJson.map { v in
@@ -875,4 +918,4 @@ public final class GoalRepository_v3: BaseRepository<GoalData> {
 // - No additional mutable state
 // - All methods are async (thread-safe)
 // - Safe to pass between actor boundaries
-extension GoalRepository_v3: @unchecked Sendable {}
+extension GoalRepository: @unchecked Sendable {}

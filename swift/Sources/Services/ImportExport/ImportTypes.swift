@@ -22,7 +22,7 @@ import Models
 /// User can uncheck invalid/unwanted records before confirming import.
 ///
 /// **Generic**: Works with any Data type (ActionData, GoalData, etc.)
-public struct ImportRecord<T: Identifiable>: Identifiable {
+public struct ImportRecord<T: Identifiable & Sendable>: Identifiable, Sendable {
     public let id: UUID  // Matches T.id for SwiftUI List
     public let rowNumber: Int
     public let data: T
@@ -121,7 +121,8 @@ public enum ImportStatus: Equatable, Sendable {
 ///
 /// **Usage**: Shown in ImportResultView after confirmation.
 /// Provides detailed success/failure breakdown.
-public struct ImportResult: Sendable {
+public struct ImportResult: Identifiable, Sendable {
+    public let id = UUID()
     public let totalRecords: Int
     public let imported: Int
     public let skipped: Int

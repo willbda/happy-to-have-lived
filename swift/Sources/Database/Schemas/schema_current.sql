@@ -412,10 +412,7 @@ CREATE TABLE semanticEmbeddings (
 
     -- Metadata
     generatedAt TEXT NOT NULL,
-    logTime TEXT NOT NULL,
-
-    -- Ensure one embedding per (entity, text) combination
-    UNIQUE(entityType, entityId, textHash)
+    logTime TEXT NOT NULL
 );
 
 -- Indexes for fast lookups

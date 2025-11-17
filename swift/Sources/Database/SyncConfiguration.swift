@@ -41,7 +41,17 @@ public enum SyncConfiguration {
             MeasuredAction.self,  // CREATE TABLE measuredActions (schema_current.sql:130)
             GoalRelevance.self,  // CREATE TABLE goalRelevances (schema_current.sql:145)
             ActionGoalContribution.self,  // CREATE TABLE actionGoalContributions (schema_current.sql:159)
-            TermGoalAssignment.self  // CREATE TABLE termGoalAssignments (schema_current.sql:174)
+            TermGoalAssignment.self,  // CREATE TABLE termGoalAssignments (schema_current.sql:174)
+            // =================================================================
+            // SEMANTIC/ML INFRASTRUCTURE (1 table)
+            // =================================================================
+            EmbeddingCacheEntry.self  // CREATE TABLE semanticEmbeddings (schema_current.sql:~280)
+                // =================================================================
+                // EXCLUDED FROM SYNC (3 tables)
+                // =================================================================
+                // - appledata: Device-local staging for HealthKit/EventKit, purged after parsing
+                // - llmConversations: Not yet implemented (models don't exist)
+                // - llmMessages: Not yet implemented (models don't exist)
         )
     }
 }

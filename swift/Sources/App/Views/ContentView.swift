@@ -2,28 +2,35 @@
   // ContentView.swift
   // Root view for TenWeekGoalApp
   //
-  // Updated by Claude Code on 2025-11-01
+  // Updated by Claude Code on 2025-11-18
 
   import SwiftUI
 
   /// Root view for the application
   ///
   /// Provides tab-based navigation with Dashboard as the landing page.
-  /// Updated 2025-11-10: Dashboard added as first tab for goal progress overview.
+  /// Updated 2025-11-18: Dashboard now includes Value Alignment Heatmap analytics.
   public struct ContentView: View {
 
       public init() {}
 
       public var body: some View {
           TabView {
-              // Tab 1: Dashboard (Coming Soon - Removed during v0.7 cleanup)
-              PlaceholderTab(
-                  icon: "chart.bar.fill",
-                  title: "Dashboard",
-                  subtitle: "Goal progress analytics coming soon"
-              )
-              .tabItem {
-                  Label("Dashboard", systemImage: "chart.bar.fill")
+              // Tab 1: Dashboard (Analytics & Insights)
+              if #available(iOS 26.0, macOS 26.0, *) {
+                  DashboardView()
+                      .tabItem {
+                          Label("Dashboard", systemImage: "chart.bar.fill")
+                      }
+              } else {
+                  PlaceholderTab(
+                      icon: "chart.bar.fill",
+                      title: "Dashboard",
+                      subtitle: "Requires iOS 26+ for analytics features"
+                  )
+                  .tabItem {
+                      Label("Dashboard", systemImage: "chart.bar.fill")
+                  }
               }
 
               // Tab 2: Actions (Phase 1 Complete - Full CRUD)

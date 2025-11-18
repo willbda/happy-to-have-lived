@@ -401,6 +401,9 @@ CREATE TABLE semanticEmbeddings (
     entityType TEXT NOT NULL CHECK(entityType IN ('goal', 'action', 'value', 'measure', 'term', 'conversation')),
     entityId TEXT NOT NULL,
 
+    -- Source variant (what text was embedded)
+    sourceVariant TEXT NOT NULL CHECK(sourceVariant IN ('title_only', 'full_context')),
+
     -- Source text tracking (for cache invalidation)
     textHash TEXT NOT NULL,         -- SHA256 of source text (detect changes)
     sourceText TEXT NOT NULL,       -- Original text (for debugging/audit)
@@ -416,30 +419,58 @@ CREATE TABLE semanticEmbeddings (
 );
 
 -- Indexes for fast lookups
-CREATE INDEX idx_semantic_embeddings_entity ON semanticEmbeddings(entityType, entityId);
-CREATE INDEX idx_semantic_embeddings_type ON semanticEmbeddings(entityType);
+CREATE INDEX idx_semantic_embeddings_entity ON semanticEmbeddings(entityType, entityId, sourceVariant);
+CREATE INDEX idx_semantic_embeddings_type ON semanticEmbeddings(entityType, sourceVariant);
 CREATE INDEX idx_semantic_embeddings_generated ON semanticEmbeddings(generatedAt);
 
 -- =============================================================================
 -- USAGE NOTES: semanticEmbeddings
 -- =============================================================================
 --
--- Cache Invalidation Strategy:
+-- SOURCE VARIANT STRATEGY:
+-- Each entity can have TWO embeddings (same entityId, different sourceVariant):
+--
+-- 1. title_only: Fast duplicate detection (3KB vector)
+--    - Contains just the title/semantic key
+--    - Used by: DuplicationDetector, quick similarity checks
+--    - Example: "run a marathon this year"
+--
+-- 2. full_context: Rich semantic search for LLM RAG (3KB vector)
+--    - Contains title + description + notes + domain-specific fields
+--    - Used by: SemanticSearchService, LLM RetrieveMemoryTool
+--    - Example: "run a marathon this year. complete 26.2 miles by december. targets: 120 km. values: health"
+--
+-- QUERY PATTERN:
+-- SELECT embedding FROM semanticEmbeddings
+-- WHERE entityType = 'goal' AND entityId = ? AND sourceVariant = 'title_only'
+--
+-- STORAGE EFFICIENCY:
+-- - Each entity: 2 embeddings × 3KB = 6KB total
+-- - 1000 goals: 6MB total (negligible storage cost)
+-- - Separate storage enables independent cache invalidation
+--
+-- CACHE INVALIDATION STRATEGY:
 -- When entity text changes, textHash changes → new embedding generated
 -- Old embeddings automatically orphaned (cleaned up by periodic purge)
 --
 -- Example: Goal title changes from "Run marathon" to "Complete 26.2 miles"
--- 1. New embedding generated with new textHash
--- 2. Old embedding remains until purge
--- 3. No foreign key cascade needed (cache is ephemeral)
+-- 1. Title-only embedding regenerated (title changed)
+-- 2. Full-context embedding regenerated (title is part of full context)
+-- 3. Old embeddings remain until purge
+-- 4. No foreign key cascade needed (cache is ephemeral)
 --
--- Lazy Generation Pattern:
+-- Example: Goal description changes (title unchanged)
+-- 1. Title-only embedding UNCHANGED (title didn't change, hash matches)
+-- 2. Full-context embedding regenerated (description is part of full context)
+-- 3. Independent invalidation saves compute (no need to regenerate title embedding)
+--
+-- LAZY GENERATION PATTERN:
 -- Embeddings generated on-demand during:
--- - Duplicate detection (when checking new entity)
--- - Semantic search (first query for entity type)
--- - LLM tool calls (when RetrieveMemoryTool queries)
+-- - Duplicate detection (when checking new entity) → title_only variant
+-- - Semantic search (first query for entity type) → full_context variant
+-- - LLM tool calls (when RetrieveMemoryTool queries) → full_context variant
 --
--- Background Generation:
+-- BACKGROUND GENERATION:
 -- Optional batch process can pre-generate embeddings for:
 -- - All existing goals/actions/values (one-time migration)
 -- - New entities created in last 24 hours (daily cron)

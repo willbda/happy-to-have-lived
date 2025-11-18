@@ -57,7 +57,9 @@ public struct ValueAlignmentHeatmapView: View {
             contentView
         }
         .navigationTitle("Value Alignment")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
+        #endif
         .task {
             await viewModel.loadMatrix()
         }
@@ -468,9 +470,11 @@ private struct AlignmentDetailSheet: View {
                 .padding()
             }
             .navigationTitle("Alignment Analysis")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .automatic) {
                     Button("Done") {
                         dismiss()
                     }

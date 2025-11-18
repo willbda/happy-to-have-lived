@@ -57,7 +57,7 @@ public struct GoalFormView: View {
     @State private var expectedTermLength: Int
 
     // Relationships
-    @State private var metricTargets: [MetricTargetInput]
+    @State private var measureTargets: [ExpectationMeasureFormData]
     @State private var valueAlignments: [ValueAlignmentInput]
     @State private var selectedValueIds: Set<UUID> = []  // Track selection separately for proper UI updates
     @State private var selectedTermId: UUID?
@@ -90,14 +90,14 @@ public struct GoalFormView: View {
 
             // Convert existing metric targets to input format
             let targets = goal.measureTargets.map { target in
-                MetricTargetInput(
+                ExpectationMeasureFormData(
                     id: target.id,
                     measureId: target.measureId,
                     targetValue: target.targetValue,
                     notes: target.freeformNotes
                 )
             }
-            _metricTargets = State(initialValue: targets)
+            _measureTargets = State(initialValue: targets)
 
             // Convert existing value alignments to input format
             let alignments = goal.valueAlignments.map { alignment in
@@ -125,7 +125,7 @@ public struct GoalFormView: View {
             _actionPlan = State(initialValue: "")
             _expectedTermLength = State(initialValue: 10)
 
-            _metricTargets = State(initialValue: [])
+            _measureTargets = State(initialValue: [])
             _valueAlignments = State(initialValue: [])
             _selectedTermId = State(initialValue: nil)
         }
@@ -166,12 +166,12 @@ public struct GoalFormView: View {
 
             // Metric targets
             Section("Measurable Targets") {
-                ForEach($metricTargets) { $target in
+                ForEach($measureTargets) { $target in
                     MetricTargetRow(
                         availableMeasures: availableMeasures,
                         target: $target,
                         onRemove: {
-                            metricTargets.removeAll { $0.id == target.id }
+                            measureTargets.removeAll { $0.id == target.id }
                         },
                         onMeasureCreated: {
                             // Refresh available measures after creating a new one
@@ -181,7 +181,7 @@ public struct GoalFormView: View {
                 }
 
                 Button {
-                    metricTargets.append(MetricTargetInput())
+                    measureTargets.append(ExpectationMeasureFormData())
                 } label: {
                     Label("Add Metric Target", systemImage: "plus.circle.fill")
                 }
@@ -325,7 +325,7 @@ public struct GoalFormView: View {
                         targetDate: targetDate,
                         actionPlan: actionPlan.isEmpty ? nil : actionPlan,
                         expectedTermLength: expectedTermLength,
-                        metricTargets: metricTargets,
+                        measureTargets: measureTargets,
                         valueAlignments: valueAlignments,
                         termId: selectedTermId
                     )
@@ -341,7 +341,7 @@ public struct GoalFormView: View {
                         targetDate: targetDate,
                         actionPlan: actionPlan.isEmpty ? nil : actionPlan,
                         expectedTermLength: expectedTermLength,
-                        metricTargets: metricTargets,
+                        measureTargets: measureTargets,
                         valueAlignments: valueAlignments,
                         termId: selectedTermId
                     )

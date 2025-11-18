@@ -28,7 +28,7 @@ import SwiftUI
 /// PATTERN: Similar to MeasurementInputRow but with notes field
 public struct MetricTargetRow: View {
     let availableMeasures: [Measure]
-    @Binding var target: MetricTargetInput
+    @Binding var target: ExpectationMeasureFormData
     let onRemove: () -> Void
     let onMeasureCreated: (() async -> Void)?
 
@@ -40,7 +40,7 @@ public struct MetricTargetRow: View {
 
     public init(
         availableMeasures: [Measure],
-        target: Binding<MetricTargetInput>,
+        target: Binding<ExpectationMeasureFormData>,
         onRemove: @escaping () -> Void = {},
         onMeasureCreated: (() async -> Void)? = nil
     ) {
@@ -188,15 +188,18 @@ public struct MetricTargetRow: View {
 
     /// Create a new measure and add it to the database
     ///
-    /// **Concurrency note**: Captures @MainActor properties before database.write
-    /// to avoid actor isolation warnings. The database.write closure runs on the
-    /// serial database queue, so we can't access @MainActor properties directly.
+    /// **Refactored 2025-11-17**: Now uses MeasureCoordinator.getOrCreate()
+    /// instead of direct database writes for proper duplicate prevention.
+    ///
+    /// **Coordinator Composition**: UI calls coordinator (not direct writes)
+    /// - Idempotent: getOrCreate() returns existing measure if duplicate found
+    /// - Validation: Two-phase validation via coordinator
+    /// - Error Handling: User-friendly ValidationError messages
     private func createMeasure() async {
         isCreating = true
         defer { isCreating = false }
 
-        // Capture @MainActor properties before database closure
-        // This avoids actor isolation warnings since database.write runs on serial queue
+        // Capture @MainActor properties
         let unit = newMeasureUnit
         let title = newMeasureTitle.isEmpty ? newMeasureUnit.capitalized : newMeasureTitle
         let type = newMeasureType
@@ -204,23 +207,14 @@ public struct MetricTargetRow: View {
         do {
             @Dependency(\.defaultDatabase) var database
 
-            let newMeasure = try await database.write { db in
-                try Measure.upsert {
-                    Measure.Draft(
-                        id: UUID(),
-                        logTime: Date(),
-                        title: title,          // Use captured value
-                        detailedDescription: nil,
-                        freeformNotes: nil,
-                        unit: unit,            // Use captured value
-                        measureType: type,     // Use captured value
-                        canonicalUnit: unit,   // Use captured value
-                        conversionFactor: nil
-                    )
-                }
-                .returning { $0 }
-                .fetchOne(db)!
-            }
+            // ✅ USE COORDINATOR (not direct database write)
+            // This is idempotent - returns existing measure if duplicate found
+            let coordinator = MeasureCoordinator(database: database)
+            let newMeasure = try await coordinator.getOrCreate(
+                unit: unit,
+                measureType: type,
+                title: title
+            )
 
             // Back on MainActor context - safe to update @State properties
             target.measureId = newMeasure.id
@@ -229,7 +223,11 @@ public struct MetricTargetRow: View {
             await onMeasureCreated?()
 
             showingCreateMeasure = false
-            print("✅ Created measure: \(newMeasure.unit)")
+            print("✅ Created/retrieved measure: \(newMeasure.unit)")
+        } catch let error as ValidationError {
+            // User-friendly validation errors
+            print("❌ MetricTargetRow ValidationError: \(error.userMessage)")
+            // TODO: Display errorMessage in UI (add @State var errorMessage: String?)
         } catch {
             print("❌ Failed to create measure: \(error)")
         }
@@ -247,7 +245,7 @@ public struct MetricTargetRow: View {
                     Measure(unit: "minutes", measureType: "time", title: "Duration (minutes)"),
                     Measure(unit: "occasions", measureType: "count", title: "Sessions")
                 ],
-                target: .constant(MetricTargetInput(
+                target: .constant(ExpectationMeasureFormData(
                     measureId: UUID(),
                     targetValue: 120,
                     notes: "Based on 10% weekly increase"
@@ -265,7 +263,7 @@ public struct MetricTargetRow: View {
                 availableMeasures: [
                     Measure(unit: "km", measureType: "distance", title: "Distance")
                 ],
-                target: .constant(MetricTargetInput()),
+                target: .constant(ExpectationMeasureFormData()),
                 onRemove: { print("Removed") }
             )
         }

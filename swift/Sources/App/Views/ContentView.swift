@@ -76,12 +76,29 @@
               }
               #endif
 
-              // Tab 8: CloudKit Sync Debug
+              // Tab 8: Debug Tools
               NavigationStack {
-                  SyncDebugView()
+                  List {
+                      Section("Data Cleanup") {
+                          NavigationLink {
+                              MeasureDeduplicationView()
+                          } label: {
+                              Label("Deduplicate Measures", systemImage: "arrow.triangle.merge")
+                          }
+                      }
+
+                      Section("Sync") {
+                          NavigationLink {
+                              SyncDebugView()
+                          } label: {
+                              Label("CloudKit Sync Status", systemImage: "icloud.and.arrow.up.fill")
+                          }
+                      }
+                  }
+                  .navigationTitle("Debug Tools")
               }
               .tabItem {
-                  Label("Sync", systemImage: "icloud.and.arrow.up.fill")
+                  Label("Debug", systemImage: "wrench.and.screwdriver")
               }
           }
       }

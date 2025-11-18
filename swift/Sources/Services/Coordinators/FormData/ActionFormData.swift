@@ -4,10 +4,16 @@
 //
 // Written by Claude Code on 2025-11-01
 // Updated by Claude Code on 2025-11-02 (moved to FormData/, made Sendable)
+// Updated by Claude Code on 2025-11-17 for get-or-create pattern
 //
 // PURPOSE:
 // Input DTO for ActionCoordinator. Holds form state and validates before persistence.
 // Follows ValueFormData and TimePeriodFormData patterns.
+//
+// GET-OR-CREATE PATTERN:
+// - User can select existing measure (measureId) OR
+// - User can create new measure inline (unit + measureType + optional title)
+// - ActionCoordinator calls MeasureCoordinator.getOrCreate() for new measures
 
 import Foundation
 import Models
@@ -89,36 +95,69 @@ public struct ActionFormData: Sendable {
 
 // MARK: - MeasurementInput Helper
 
-/// Temporary struct for measurement input in the form
+/// Input struct for action measurements with get-or-create support
 ///
-/// Holds the measure selection and value before conversion to MeasuredAction.
-/// Sendable for safe passage from form to coordinator.
-///
-/// **Usage**:
+/// **Usage Pattern 1** (Select existing measure):
 /// ```swift
-/// var measurements: [MeasurementInput] = []
-/// measurements.append(MeasurementInput(
-///     measureId: Measure.kilometers.id,
+/// MeasurementInput(
+///     measureId: existingMeasure.id,
 ///     value: 5.2
-/// ))
+/// )
 /// ```
+///
+/// **Usage Pattern 2** (Create new measure inline):
+/// ```swift
+/// MeasurementInput(
+///     unit: "km",
+///     measureType: "distance",
+///     measureTitle: "Distance in kilometers",  // Optional
+///     value: 5.2
+/// )
+/// ```
+///
+/// **Validation**: Requires EITHER `measureId` OR (`unit` + `measureType`)
+///
+/// **Coordinator Integration**:
+/// - ActionCoordinator checks which pattern is used
+/// - If measureId: Uses existing measure
+/// - If unit+measureType: Calls `MeasureCoordinator.getOrCreate()`
+/// - Result: Measure guaranteed to exist before MeasuredAction insert
 public struct MeasurementInput: Identifiable, Sendable {
     public let id: UUID
-    public var measureId: UUID?  // FK to measures catalog
+
+    // PATTERN 1: Reference existing measure
+    public var measureId: UUID?
+
+    // PATTERN 2: Create new measure inline
+    public var unit: String?
+    public var measureType: String?
+    public var measureTitle: String?  // Optional custom title
+
+    // Common fields
     public var value: Double
 
-    /// Whether this measurement is valid (has both measure and positive value)
+    /// Validation: Requires EITHER measureId OR (unit + measureType), AND value > 0
     public var isValid: Bool {
-        measureId != nil && value > 0
+        let hasMeasure = measureId != nil
+        let hasNewMeasure = unit != nil && measureType != nil &&
+                           !unit!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                           !measureType!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return (hasMeasure || hasNewMeasure) && value > 0
     }
 
     public init(
         id: UUID = UUID(),
         measureId: UUID? = nil,
+        unit: String? = nil,
+        measureType: String? = nil,
+        measureTitle: String? = nil,
         value: Double = 0.0
     ) {
         self.id = id
         self.measureId = measureId
+        self.unit = unit
+        self.measureType = measureType
+        self.measureTitle = measureTitle
         self.value = value
     }
 }

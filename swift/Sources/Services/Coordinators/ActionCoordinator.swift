@@ -1,11 +1,18 @@
 //
 // ActionCoordinator.swift
 // Written by Claude Code on 2025-11-02
+// Updated by Claude Code on 2025-11-17 for get-or-create pattern
 //
 // PURPOSE: Coordinates creation of Action entities with measurements and goal contributions
 // ARCHITECTURE: Multi-model atomic transactions (Action + MeasuredAction[] + ActionGoalContribution[])
 //
+// GET-OR-CREATE PATTERN:
+// - MeasurementInput can specify EITHER existing measureId OR new measure (unit + measureType)
+// - ActionCoordinator calls MeasureCoordinator.getOrCreate() BEFORE transaction
+// - Measures guaranteed to exist before MeasuredAction insert
+//
 
+import Dependencies
 import Foundation
 import Models
 import SQLiteData
@@ -37,28 +44,50 @@ public final class ActionCoordinator: Sendable {
     /// - Returns: Persisted Action with generated ID
     /// - Throws: Database errors if constraints violated or referenced entities don't exist
     ///
-    /// IMPLEMENTATION:
-    /// 1. Validate measureIds exist in Measures table
-    /// 2. Validate goalIds exist in Goals table (if any)
-    /// 3. Insert Action (using .insert for CREATE, not .upsert)
-    /// 4. Insert MeasuredAction records for each measurement
-    /// 5. Insert ActionGoalContribution records for each goal
-    /// 6. Return Action (caller can access relationships via queries)
+    /// IMPLEMENTATION (Coordinator Composition Pattern):
+    /// 1. BEFORE transaction: Get-or-create measures via MeasureCoordinator
+    /// 2. THEN atomic transaction:
+    ///    - Validate goalIds exist in Goals table
+    ///    - Insert Action (using .insert for CREATE, not .upsert)
+    ///    - Insert MeasuredAction records for each resolved measure
+    ///    - Insert ActionGoalContribution records for each goal
+    /// 3. Return Action (caller can access relationships via queries)
     public func create(from formData: ActionFormData) async throws -> Action {
         // Phase 1: Validate form data (business rules)
         // Throws: ValidationError.emptyAction, ValidationError.invalidDateRange, etc.
         try ActionValidation.validateFormData(formData)
 
-        return try await database.write { db in
-            // Validate measureIds exist (if any measurements provided)
-            for measurement in formData.measurements where measurement.measureId != nil {
-                let measureExists = try Measure.find(measurement.measureId!).fetchOne(db) != nil
-                guard measureExists else {
-                    throw ValidationError.invalidMeasure(
-                        "Measure \(measurement.measureId!) not found")
+        // COORDINATOR COMPOSITION: Get-or-create measures BEFORE transaction
+        let measureCoordinator = MeasureCoordinator(database: database)
+
+        let resolvedMeasurements: [(measureId: UUID, value: Double)] = try await {
+            var measurements: [(measureId: UUID, value: Double)] = []
+
+            for measurement in formData.measurements where measurement.isValid {
+                let measureId: UUID
+
+                if let existingId = measurement.measureId {
+                    // Pattern 1: Use existing measure
+                    measureId = existingId
+                } else if let unit = measurement.unit, let measureType = measurement.measureType {
+                    // Pattern 2: Get-or-create measure
+                    let measure = try await measureCoordinator.getOrCreate(
+                        unit: unit,
+                        measureType: measureType,
+                        title: measurement.measureTitle
+                    )
+                    measureId = measure.id
+                } else {
+                    continue  // Skip invalid (shouldn't reach here if isValid passed)
                 }
+
+                measurements.append((measureId: measureId, value: measurement.value))
             }
 
+            return measurements
+        }()
+
+        return try await database.write { db in
             // Validate goalIds exist (if any contributions provided)
             for goalId in formData.goalContributions {
                 let goalExists = try Goal.find(goalId).fetchOne(db) != nil
@@ -83,13 +112,14 @@ public final class ActionCoordinator: Sendable {
             .returning { $0 }
             .fetchOne(db)!  // Safe: successful insert always returns value
 
-            // 4. Insert MeasuredAction records for each valid measurement
-            for measurement in formData.measurements where measurement.isValid {
+            // 4. Insert MeasuredAction records for each resolved measurement
+            // Use resolvedMeasurements (measures guaranteed to exist from coordinator composition)
+            for measurement in resolvedMeasurements {
                 try MeasuredAction.insert {
                     MeasuredAction.Draft(
                         id: UUID(),
                         actionId: action.id,
-                        measureId: measurement.measureId!,  // Already validated above
+                        measureId: measurement.measureId,
                         value: measurement.value,
                         createdAt: Date()
                     )
@@ -113,12 +143,11 @@ public final class ActionCoordinator: Sendable {
             }
 
             // Phase 2: Validate complete entity graph (referential integrity)
-            // Build the arrays for validation
-            let measurements = formData.measurements.compactMap { measurement -> MeasuredAction? in
-                guard let measureId = measurement.measureId else { return nil }
-                return MeasuredAction(
+            // Build the arrays for validation using resolvedMeasurements
+            let measurements = resolvedMeasurements.map { measurement in
+                MeasuredAction(
                     actionId: action.id,
-                    measureId: measureId,
+                    measureId: measurement.measureId,
                     value: measurement.value,
                     createdAt: Date(),
                     id: UUID()

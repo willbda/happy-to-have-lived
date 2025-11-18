@@ -65,13 +65,13 @@ public struct FormDataTransformer {
     /// **Pattern**:
     /// - Expectation fields mapped directly
     /// - Goal fields mapped directly
-    /// - measureTargets[] → MetricTargetInput[]
+    /// - measureTargets[] → ExpectationMeasureFormData[]
     /// - valueAlignments[] → ValueAlignmentInput[]
     /// - termAssignment → termId (optional)
     public func transformGoal(_ data: GoalData) -> GoalFormData {
         // Transform measure targets
-        let metricTargets = data.measureTargets.map { mt in
-            MetricTargetInput(
+        let measureTargets = data.measureTargets.map { mt in
+            ExpectationMeasureFormData(
                 id: mt.id,
                 measureId: mt.measureId,
                 targetValue: mt.targetValue,
@@ -99,7 +99,7 @@ public struct FormDataTransformer {
             targetDate: data.targetDate,
             actionPlan: data.actionPlan,
             expectedTermLength: data.expectedTermLength,
-            metricTargets: metricTargets,
+            measureTargets: measureTargets,
             valueAlignments: valueAlignments,
             termId: data.termAssignment?.termId
         )

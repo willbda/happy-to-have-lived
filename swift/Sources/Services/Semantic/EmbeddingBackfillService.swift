@@ -54,10 +54,17 @@ public enum EmbeddingBackfillService {
                 await backfillPersonalValues(database: database)
             }
 
-            // Future: Add actions when needed
-            // group.addTask {
-            //     await backfillActions(database: database)
-            // }
+            group.addTask {
+                await backfillActions(database: database)
+            }
+
+            group.addTask {
+                await backfillMeasures(database: database)
+            }
+
+            group.addTask {
+                await backfillTimePeriods(database: database)
+            }
         }
 
         let duration = Date().timeIntervalSince(start)
@@ -72,36 +79,60 @@ public enum EmbeddingBackfillService {
             let repository = GoalRepository(database: database)
             let allGoals = try await repository.fetchAll()
 
-            // 2. Find which goals already have embeddings
-            let embeddingRepo = EmbeddingCacheRepository(database: database)
-            let existingEmbeddings = try await embeddingRepo.fetchAllByType("goal")
-            let embeddedGoalIds = Set(existingEmbeddings.map { $0.entityId })
-
-            // 3. Filter to goals missing embeddings
-            let missingEmbeddings = allGoals.filter { !embeddedGoalIds.contains($0.id) }
-
-            guard !missingEmbeddings.isEmpty else {
-                print("   ✓ Goals: All \(allGoals.count) already have embeddings")
+            guard !allGoals.isEmpty else {
+                print("   ✓ Goals: No goals to process")
                 return
             }
 
-            print("   🔄 Goals: Generating \(missingEmbeddings.count)/\(allGoals.count) missing embeddings...")
+            // 2. Find which goals already have BOTH embeddings (title_only + full_context)
+            let existingTitleEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "goal",
+                variant: .titleOnly
+            )
+            let existingFullEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "goal",
+                variant: .fullContext
+            )
 
-            // 4. Generate embeddings
-            let semanticService = SemanticService(database: database, configuration: .default)
-            var successCount = 0
+            // 3. Filter to goals missing embeddings
+            let missingTitleEmbeddings = allGoals.filter { !existingTitleEmbeddings.contains($0.id) }
+            let missingFullEmbeddings = allGoals.filter { !existingFullEmbeddings.contains($0.id) }
 
-            for goal in missingEmbeddings {
+            guard !missingTitleEmbeddings.isEmpty || !missingFullEmbeddings.isEmpty else {
+                print("   ✓ Goals: All \(allGoals.count) have complete embeddings (title + full)")
+                return
+            }
+
+            print("   🔄 Goals: Generating \(missingTitleEmbeddings.count) title-only + \(missingFullEmbeddings.count) full-context embeddings...")
+
+            // 4. Generate embeddings using new EmbeddingGenerationService
+            let embeddingService = EmbeddingGenerationService(database: database)
+            var titleSuccessCount = 0
+            var fullSuccessCount = 0
+
+            // Generate title-only embeddings
+            for goal in missingTitleEmbeddings {
                 do {
-                    _ = try await semanticService.generateEmbedding(for: goal.title ?? "Untitled")
-                    successCount += 1
+                    _ = try await embeddingService.generateGoalEmbedding(goal: goal, variant: .titleOnly)
+                    titleSuccessCount += 1
                 } catch {
-                    // Log but continue (best effort)
-                    print("   ⚠️  Failed to generate embedding for goal '\(goal.title ?? "Untitled")': \(error)")
+                    print("   ⚠️  Failed to generate title embedding for goal '\(goal.title ?? "Untitled")': \(error)")
                 }
             }
 
-            print("   ✅ Goals: Generated \(successCount)/\(missingEmbeddings.count) embeddings")
+            // Generate full-context embeddings
+            for goal in missingFullEmbeddings {
+                do {
+                    _ = try await embeddingService.generateGoalEmbedding(goal: goal, variant: .fullContext)
+                    fullSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate full embedding for goal '\(goal.title ?? "Untitled")': \(error)")
+                }
+            }
+
+            print("   ✅ Goals: Generated \(titleSuccessCount) title-only + \(fullSuccessCount) full-context embeddings")
 
         } catch {
             print("   ❌ Goals backfill failed: \(error)")
@@ -116,39 +147,299 @@ public enum EmbeddingBackfillService {
             let repository = PersonalValueRepository(database: database)
             let allValues = try await repository.fetchAll()
 
-            // 2. Find which values already have embeddings
-            let embeddingRepo = EmbeddingCacheRepository(database: database)
-            let existingEmbeddings = try await embeddingRepo.fetchAllByType("value")
-            let embeddedValueIds = Set(existingEmbeddings.map { $0.entityId })
-
-            // 3. Filter to values missing embeddings
-            let missingEmbeddings = allValues.filter { !embeddedValueIds.contains($0.id) }
-
-            guard !missingEmbeddings.isEmpty else {
-                print("   ✓ Values: All \(allValues.count) already have embeddings")
+            guard !allValues.isEmpty else {
+                print("   ✓ Values: No values to process")
                 return
             }
 
-            print("   🔄 Values: Generating \(missingEmbeddings.count)/\(allValues.count) missing embeddings...")
+            // 2. Find which values already have BOTH embeddings (title_only + full_context)
+            let existingTitleEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "value",
+                variant: .titleOnly
+            )
+            let existingFullEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "value",
+                variant: .fullContext
+            )
 
-            // 4. Generate embeddings
-            let semanticService = SemanticService(database: database, configuration: .default)
-            var successCount = 0
+            // 3. Filter to values missing embeddings
+            let missingTitleEmbeddings = allValues.filter { !existingTitleEmbeddings.contains($0.id) }
+            let missingFullEmbeddings = allValues.filter { !existingFullEmbeddings.contains($0.id) }
 
-            for value in missingEmbeddings {
+            guard !missingTitleEmbeddings.isEmpty || !missingFullEmbeddings.isEmpty else {
+                print("   ✓ Values: All \(allValues.count) have complete embeddings (title + full)")
+                return
+            }
+
+            print("   🔄 Values: Generating \(missingTitleEmbeddings.count) title-only + \(missingFullEmbeddings.count) full-context embeddings...")
+
+            // 4. Generate embeddings using new EmbeddingGenerationService
+            let embeddingService = EmbeddingGenerationService(database: database)
+            var titleSuccessCount = 0
+            var fullSuccessCount = 0
+
+            // Generate title-only embeddings
+            for value in missingTitleEmbeddings {
                 do {
-                    _ = try await semanticService.generateEmbedding(for: value.title)
-                    successCount += 1
+                    _ = try await embeddingService.generateValueEmbedding(value: value, variant: .titleOnly)
+                    titleSuccessCount += 1
                 } catch {
-                    // Log but continue (best effort)
-                    print("   ⚠️  Failed to generate embedding for value '\(value.title)': \(error)")
+                    print("   ⚠️  Failed to generate title embedding for value '\(value.title)': \(error)")
                 }
             }
 
-            print("   ✅ Values: Generated \(successCount)/\(missingEmbeddings.count) embeddings")
+            // Generate full-context embeddings
+            for value in missingFullEmbeddings {
+                do {
+                    _ = try await embeddingService.generateValueEmbedding(value: value, variant: .fullContext)
+                    fullSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate full embedding for value '\(value.title)': \(error)")
+                }
+            }
+
+            print("   ✅ Values: Generated \(titleSuccessCount) title-only + \(fullSuccessCount) full-context embeddings")
 
         } catch {
             print("   ❌ Values backfill failed: \(error)")
+        }
+    }
+
+    // MARK: - Action Backfill
+
+    private static func backfillActions(database: any DatabaseWriter) async {
+        do {
+            // 1. Fetch all actions (ActionData is canonical type)
+            let repository = ActionRepository(database: database)
+            let allActions = try await repository.fetchAll()
+
+            guard !allActions.isEmpty else {
+                print("   ✓ Actions: No actions to process")
+                return
+            }
+
+            // 2. Find which actions already have BOTH embeddings
+            let existingTitleEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "action",
+                variant: .titleOnly
+            )
+            let existingFullEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "action",
+                variant: .fullContext
+            )
+
+            // 3. Filter to actions missing embeddings
+            let missingTitleEmbeddings = allActions.filter { !existingTitleEmbeddings.contains($0.id) }
+            let missingFullEmbeddings = allActions.filter { !existingFullEmbeddings.contains($0.id) }
+
+            guard !missingTitleEmbeddings.isEmpty || !missingFullEmbeddings.isEmpty else {
+                print("   ✓ Actions: All \(allActions.count) have complete embeddings (title + full)")
+                return
+            }
+
+            print("   🔄 Actions: Generating \(missingTitleEmbeddings.count) title-only + \(missingFullEmbeddings.count) full-context embeddings...")
+
+            // 4. Generate embeddings
+            let embeddingService = EmbeddingGenerationService(database: database)
+            var titleSuccessCount = 0
+            var fullSuccessCount = 0
+
+            // Generate title-only embeddings
+            for action in missingTitleEmbeddings {
+                do {
+                    _ = try await embeddingService.generateActionEmbedding(action: action, variant: .titleOnly)
+                    titleSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate title embedding for action '\(action.title ?? "Untitled")': \(error)")
+                }
+            }
+
+            // Generate full-context embeddings
+            for action in missingFullEmbeddings {
+                do {
+                    _ = try await embeddingService.generateActionEmbedding(action: action, variant: .fullContext)
+                    fullSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate full embedding for action '\(action.title ?? "Untitled")': \(error)")
+                }
+            }
+
+            print("   ✅ Actions: Generated \(titleSuccessCount) title-only + \(fullSuccessCount) full-context embeddings")
+
+        } catch {
+            print("   ❌ Actions backfill failed: \(error)")
+        }
+    }
+
+    // MARK: - Measure Backfill
+
+    private static func backfillMeasures(database: any DatabaseWriter) async {
+        do {
+            // 1. Fetch all measures (MeasureData is canonical type)
+            let repository = MeasureRepository(database: database)
+            let allMeasures = try await repository.fetchAll()
+
+            guard !allMeasures.isEmpty else {
+                print("   ✓ Measures: No measures to process")
+                return
+            }
+
+            // 2. Find which measures already have BOTH embeddings
+            let existingTitleEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "measure",
+                variant: .titleOnly
+            )
+            let existingFullEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "measure",
+                variant: .fullContext
+            )
+
+            // 3. Filter to measures missing embeddings
+            let missingTitleEmbeddings = allMeasures.filter { !existingTitleEmbeddings.contains($0.id) }
+            let missingFullEmbeddings = allMeasures.filter { !existingFullEmbeddings.contains($0.id) }
+
+            guard !missingTitleEmbeddings.isEmpty || !missingFullEmbeddings.isEmpty else {
+                print("   ✓ Measures: All \(allMeasures.count) have complete embeddings (title + full)")
+                return
+            }
+
+            print("   🔄 Measures: Generating \(missingTitleEmbeddings.count) title-only + \(missingFullEmbeddings.count) full-context embeddings...")
+
+            // 4. Generate embeddings
+            let embeddingService = EmbeddingGenerationService(database: database)
+            var titleSuccessCount = 0
+            var fullSuccessCount = 0
+
+            // Generate title-only embeddings (unit + measureType for semantic matching)
+            for measure in missingTitleEmbeddings {
+                do {
+                    _ = try await embeddingService.generateMeasureEmbedding(measure: measure, variant: .titleOnly)
+                    titleSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate title embedding for measure '\(measure.unit) \(measure.measureType)': \(error)")
+                }
+            }
+
+            // Generate full-context embeddings
+            for measure in missingFullEmbeddings {
+                do {
+                    _ = try await embeddingService.generateMeasureEmbedding(measure: measure, variant: .fullContext)
+                    fullSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate full embedding for measure '\(measure.unit) \(measure.measureType)': \(error)")
+                }
+            }
+
+            print("   ✅ Measures: Generated \(titleSuccessCount) title-only + \(fullSuccessCount) full-context embeddings")
+
+        } catch {
+            print("   ❌ Measures backfill failed: \(error)")
+        }
+    }
+
+    // MARK: - TimePeriod Backfill
+
+    private static func backfillTimePeriods(database: any DatabaseWriter) async {
+        do {
+            // 1. Fetch all time periods (TimePeriodData is canonical type)
+            let repository = TimePeriodRepository(database: database)
+            let allPeriods = try await repository.fetchAll()
+
+            guard !allPeriods.isEmpty else {
+                print("   ✓ TimePeriods: No time periods to process")
+                return
+            }
+
+            // 2. Find which time periods already have BOTH embeddings
+            let existingTitleEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "term",
+                variant: .titleOnly
+            )
+            let existingFullEmbeddings = try await fetchExistingEmbeddings(
+                database: database,
+                entityType: "term",
+                variant: .fullContext
+            )
+
+            // 3. Filter to time periods missing embeddings
+            let missingTitleEmbeddings = allPeriods.filter { !existingTitleEmbeddings.contains($0.id) }
+            let missingFullEmbeddings = allPeriods.filter { !existingFullEmbeddings.contains($0.id) }
+
+            guard !missingTitleEmbeddings.isEmpty || !missingFullEmbeddings.isEmpty else {
+                print("   ✓ TimePeriods: All \(allPeriods.count) have complete embeddings (title + full)")
+                return
+            }
+
+            print("   🔄 TimePeriods: Generating \(missingTitleEmbeddings.count) title-only + \(missingFullEmbeddings.count) full-context embeddings...")
+
+            // 4. Generate embeddings
+            let embeddingService = EmbeddingGenerationService(database: database)
+            var titleSuccessCount = 0
+            var fullSuccessCount = 0
+
+            // Generate title-only embeddings
+            for period in missingTitleEmbeddings {
+                do {
+                    _ = try await embeddingService.generateTimePeriodEmbedding(period: period, variant: .titleOnly)
+                    titleSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate title embedding for period '\(period.timePeriodTitle ?? "Term \(period.termNumber)")': \(error)")
+                }
+            }
+
+            // Generate full-context embeddings
+            for period in missingFullEmbeddings {
+                do {
+                    _ = try await embeddingService.generateTimePeriodEmbedding(period: period, variant: .fullContext)
+                    fullSuccessCount += 1
+                } catch {
+                    print("   ⚠️  Failed to generate full embedding for period '\(period.timePeriodTitle ?? "Term \(period.termNumber)")': \(error)")
+                }
+            }
+
+            print("   ✅ TimePeriods: Generated \(titleSuccessCount) title-only + \(fullSuccessCount) full-context embeddings")
+
+        } catch {
+            print("   ❌ TimePeriods backfill failed: \(error)")
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    /// Fetch set of entity IDs that already have embeddings for given type and variant
+    ///
+    /// - Parameters:
+    ///   - database: Database to query
+    ///   - entityType: Entity type ('goal', 'action', 'value', 'measure', 'term')
+    ///   - variant: Source variant (title_only or full_context)
+    /// - Returns: Set of UUIDs for entities with existing embeddings
+    private static func fetchExistingEmbeddings(
+        database: any DatabaseWriter,
+        entityType: String,
+        variant: EmbeddingSourceVariant
+    ) async throws -> Set<UUID> {
+        try await database.read { db in
+            let sql = """
+                SELECT DISTINCT entityId
+                FROM semanticEmbeddings
+                WHERE entityType = ? AND sourceVariant = ?
+                """
+
+            let rows = try Row.fetchAll(db, sql: sql, arguments: [entityType, variant.rawValue])
+
+            let uuids = rows.compactMap { row -> UUID? in
+                let uuidString: String = row["entityId"]
+                return UUID(uuidString: uuidString)
+            }
+
+            return Set(uuids)
         }
     }
 

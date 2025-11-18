@@ -34,9 +34,35 @@
         /// - Parameter workout: HealthKit workout to import
         /// - Returns: Created Action with measurements
         /// - Throws: Database errors
+        ///
+        /// **Refactored 2025-11-17**: Uses MeasureCoordinator.getOrCreate()
+        /// instead of findOrCreateMeasure() for proper duplicate prevention.
         public func importWorkout(_ workout: HealthWorkout) async throws -> Action {
+            // COORDINATOR COMPOSITION: Get-or-create measures BEFORE transaction
+            // This ensures all measures exist with proper duplicate prevention
+            let measureCoordinator = MeasureCoordinator(database: database)
+
+            // 1. Get-or-create duration measure (hours or minutes)
+            let durationMeasure = try await measureCoordinator.getOrCreate(
+                unit: workout.duration >= 3600 ? "hours" : "minutes",
+                measureType: "time"
+            )
+
+            // 2. Get-or-create distance measure (if workout has distance)
+            let distanceMeasure: Measure? =
+                workout.totalDistance != nil
+                ? try await measureCoordinator.getOrCreate(unit: "km", measureType: "distance")
+                : nil
+
+            // 3. Get-or-create calories measure (if workout has energy)
+            let caloriesMeasure: Measure? =
+                workout.totalEnergyBurned != nil
+                ? try await measureCoordinator.getOrCreate(unit: "kcal", measureType: "energy")
+                : nil
+
+            // NOW write action + measurements in single atomic transaction
             return try await database.write { db in
-                // 1. Create the Action
+                // Create the Action
                 let action = try Action.upsert {
                     Action.Draft(
                         title: workout.activityName,
@@ -51,14 +77,7 @@
                 .returning { $0 }
                 .fetchOne(db)!
 
-                // 2. Find or create Measures
-                let durationMeasure = try findOrCreateMeasure(
-                    unit: workout.duration >= 3600 ? "hours" : "minutes",
-                    measureType: "time",
-                    in: db
-                )
-
-                // 3. Add duration measurement
+                // Add duration measurement
                 let durationValue =
                     workout.duration >= 3600
                     ? workout.duration / 3600  // Convert to hours
@@ -68,26 +87,20 @@
                     MeasuredAction.Draft(
                         id: UUID(),
                         actionId: action.id,
-                        measureId: durationMeasure.id,
+                        measureId: durationMeasure.id,  // From coordinator (guaranteed to exist)
                         value: durationValue,
                         createdAt: Date()
                     )
                 }
                 .execute(db)
 
-                // 4. Add distance measurement (if available)
-                if let distanceMeters = workout.totalDistance {
-                    let distanceMeasure = try findOrCreateMeasure(
-                        unit: "km",
-                        measureType: "distance",
-                        in: db
-                    )
-
+                // Add distance measurement (if available)
+                if let distanceMeasure = distanceMeasure, let distanceMeters = workout.totalDistance {
                     try MeasuredAction.upsert {
                         MeasuredAction.Draft(
                             id: UUID(),
                             actionId: action.id,
-                            measureId: distanceMeasure.id,
+                            measureId: distanceMeasure.id,  // From coordinator (guaranteed to exist)
                             value: distanceMeters / 1000,  // Convert to km
                             createdAt: Date()
                         )
@@ -95,19 +108,13 @@
                     .execute(db)
                 }
 
-                // 5. Add calories measurement (if available)
-                if let calories = workout.totalEnergyBurned {
-                    let caloriesMeasure = try findOrCreateMeasure(
-                        unit: "kcal",
-                        measureType: "energy",
-                        in: db
-                    )
-
+                // Add calories measurement (if available)
+                if let caloriesMeasure = caloriesMeasure, let calories = workout.totalEnergyBurned {
                     try MeasuredAction.upsert {
                         MeasuredAction.Draft(
                             id: UUID(),
                             actionId: action.id,
-                            measureId: caloriesMeasure.id,
+                            measureId: caloriesMeasure.id,  // From coordinator (guaranteed to exist)
                             value: calories,
                             createdAt: Date()
                         )
@@ -136,40 +143,13 @@
 
         // MARK: - Private Helpers
 
-        /// Find existing measure or create new one
-        /// - Note: Marked nonisolated because it's called from database.write closures
-        nonisolated private func findOrCreateMeasure(
-            unit unitValue: String,
-            measureType typeValue: String,
-            in db: Database
-        ) throws -> Measure {
-            // Fetch all measures and filter in Swift
-            // SQLiteData's query builder doesn't support capturing external values in closures
-            let allMeasures = try Measure.all.fetchAll(db)
-
-            if let existing = allMeasures.first(where: {
-                $0.unit == unitValue && $0.measureType == typeValue
-            }) {
-                return existing
-            }
-
-            // Create new measure
-            return try Measure.upsert {
-                Measure.Draft(
-                    id: UUID(),
-                    logTime: Date(),
-                    title: unitValue.capitalized,
-                    detailedDescription: "Measurement unit for \(typeValue)",
-                    freeformNotes: nil,
-                    unit: unitValue,
-                    measureType: typeValue,  // Fixed: measureType not measureType
-                    canonicalUnit: unitValue,  // For now, same as unit
-                    conversionFactor: nil
-                )
-            }
-            .returning { $0 }
-            .fetchOne(db)!
-        }
+        // NOTE: findOrCreateMeasure() removed 2025-11-17
+        // Now uses MeasureCoordinator.getOrCreate() instead (see importWorkout above)
+        // Benefits:
+        // - Proper duplicate prevention via coordinator
+        // - Case-insensitive matching via repository
+        // - Two-phase validation
+        // - Single source of truth for measure creation
     }
 
 #else

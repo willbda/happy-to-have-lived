@@ -36,7 +36,7 @@ import Models
 ///     action: actionDetails.action,
 ///     actionMeasures: actionDetails.measurements.map { ($0.measure, $0.measuredAction.value) },
 ///     goal: goalDetails.goal,
-///     goalTargets: goalDetails.metricTargets.map { ($0.measure, $0.expectationMeasure.targetValue) }
+///     goalTargets: goalDetails.measureTargets.map { ($0.measure, $0.expectationMeasure.targetValue) }
 /// )
 ///
 /// if match.isMatch {
@@ -251,7 +251,7 @@ public struct MatchingService {
     ///     action: action,
     ///     actionMeasures: actionDetails.measurements.map { ($0.measure, $0.measuredAction.value) },
     ///     goal: goal,
-    ///     goalTargets: goalDetails.metricTargets.map { ($0.measure, $0.expectationMeasure.targetValue) },
+    ///     goalTargets: goalDetails.measureTargets.map { ($0.measure, $0.expectationMeasure.targetValue) },
     ///     keywords: ["run", "jog"]  // Optional
     /// )
     ///

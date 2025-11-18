@@ -10,6 +10,7 @@ import Database  // DatabaseBootstrap for initialization
 import App
 import Dependencies
 import SQLiteData  // For #sql macro
+import Services  // EmbeddingBackfillService for background embedding generation
 
 @main
 struct HappyToHaveLivedApp: App {
@@ -38,6 +39,7 @@ struct HappyToHaveLivedApp: App {
                 }
                 .task {
                     await performInitialSyncIfNeeded()
+                    await startBackgroundEmbeddingGeneration()
                 }
         }
     }
@@ -100,5 +102,29 @@ struct HappyToHaveLivedApp: App {
         }
 
         isPerformingInitialSync = false
+    }
+
+    /// Start background embedding generation for all entities
+    ///
+    /// Runs EmbeddingBackfillService after initial sync completes to ensure all entities
+    /// have semantic embeddings (both title-only and full-context variants).
+    ///
+    /// **Execution**:
+    /// - Runs in background (low priority)
+    /// - Non-blocking (fire-and-forget pattern)
+    /// - Best-effort (errors logged but don't crash app)
+    ///
+    /// **Use Cases**:
+    /// - Backfill embeddings for goals/actions/values created before semantic infrastructure
+    /// - Generate embeddings for CSV-imported entities
+    /// - Ensure all entities ready for duplicate detection and semantic search
+    @available(iOS 26.0, macOS 26.0, *)
+    private func startBackgroundEmbeddingGeneration() async {
+        @Dependency(\.defaultDatabase) var database
+
+        // Run in background with low priority (don't block UI)
+        Task.detached(priority: .background) {
+            await EmbeddingBackfillService.run(database: database)
+        }
     }
 }

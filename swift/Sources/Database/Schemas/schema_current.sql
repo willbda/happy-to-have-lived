@@ -398,7 +398,7 @@ CREATE TABLE semanticEmbeddings (
     id TEXT PRIMARY KEY,
 
     -- Entity reference
-    entityType TEXT NOT NULL CHECK(entityType IN ('goal', 'action', 'value', 'measure', 'term', 'conversation')),
+    entityType TEXT NOT NULL,
     entityId TEXT NOT NULL,
 
     -- Source variant (what text was embedded)

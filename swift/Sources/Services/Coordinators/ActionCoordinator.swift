@@ -87,7 +87,7 @@ public final class ActionCoordinator: Sendable {
             return measurements
         }()
 
-        return try await database.write { db in
+        let createdAction = try await database.write { db in
             // Validate goalIds exist (if any contributions provided)
             for goalId in formData.goalContributions {
                 let goalExists = try Goal.find(goalId).fetchOne(db) != nil
@@ -170,6 +170,50 @@ public final class ActionCoordinator: Sendable {
             // 6. Return Action (caller accesses relationships via ActionsQuery)
             return action
         }
+
+        // 7. Generate embeddings asynchronously (fire-and-forget, don't block return)
+        // Fire task AFTER database.write completes to avoid blocking action creation
+        let actionId = createdAction.id
+        Task.detached(priority: .background) { [database = self.database] in
+            // Fetch full ActionData and generate both embedding variants
+            let repository = ActionRepository(database: database)
+            guard let actionData = try? await repository.fetchAll().first(where: { $0.id == actionId })
+            else {
+                print(
+                    "⚠️ Failed to fetch ActionData for embedding generation (action: \(actionId))")
+                return
+            }
+
+            let embeddingService = EmbeddingGenerationService(database: database)
+
+            // Generate title-only embedding (for duplicate detection)
+            do {
+                _ = try await embeddingService.generateActionEmbedding(
+                    action: actionData, variant: .titleOnly)
+                print(
+                    "✅ Generated title-only embedding for action: \(actionData.title ?? "Untitled")"
+                )
+            } catch {
+                print(
+                    "⚠️ Failed to generate title-only embedding for action '\(actionData.title ?? "Untitled")': \(error)"
+                )
+            }
+
+            // Generate full-context embedding (for semantic search & LLM RAG)
+            do {
+                _ = try await embeddingService.generateActionEmbedding(
+                    action: actionData, variant: .fullContext)
+                print(
+                    "✅ Generated full-context embedding for action: \(actionData.title ?? "Untitled")"
+                )
+            } catch {
+                print(
+                    "⚠️ Failed to generate full-context embedding for action '\(actionData.title ?? "Untitled")': \(error)"
+                )
+            }
+        }
+
+        return createdAction
     }
 
     /// Updates existing Action with measurements and goal contributions from form data.

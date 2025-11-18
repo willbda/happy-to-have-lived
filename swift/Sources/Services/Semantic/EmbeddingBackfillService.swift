@@ -16,6 +16,7 @@
 import Foundation
 import Models
 import SQLiteData
+import GRDB
 
 /// Background service to ensure all entities have semantic embeddings
 ///

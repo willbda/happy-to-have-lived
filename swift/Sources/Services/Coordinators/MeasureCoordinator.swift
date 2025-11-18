@@ -168,7 +168,7 @@ public final class MeasureCoordinator: Sendable {
         }
 
         // Insert to database (atomic transaction)
-        let measure = try await database.write { db in
+        let createdMeasure = try await database.write { db in
             try Measure.insert {
                 Measure.Draft(
                     id: UUID(),
@@ -187,9 +187,55 @@ public final class MeasureCoordinator: Sendable {
         }
 
         // Phase 2: Validate complete entity (defensive check)
-        try validateComplete(measure)
+        try validateComplete(createdMeasure)
 
-        return measure
+        // Phase 3: Generate embeddings asynchronously (fire-and-forget, don't block return)
+        // Fire task AFTER database.write completes to avoid blocking measure creation
+        let measureId = createdMeasure.id
+        Task.detached(priority: .background) { [database = self.database] in
+            // Fetch full MeasureData and generate both embedding variants
+            let repository = MeasureRepository(database: database)
+            guard
+                let measureData = try? await repository.fetchAll().first(where: {
+                    $0.id == measureId
+                })
+            else {
+                print(
+                    "⚠️ Failed to fetch MeasureData for embedding generation (measure: \(measureId))"
+                )
+                return
+            }
+
+            let embeddingService = EmbeddingGenerationService(database: database)
+
+            // Generate title-only embedding (for duplicate detection)
+            do {
+                _ = try await embeddingService.generateMeasureEmbedding(
+                    measure: measureData, variant: .titleOnly)
+                print(
+                    "✅ Generated title-only embedding for measure: \(measureData.title ?? "Untitled")"
+                )
+            } catch {
+                print(
+                    "⚠️ Failed to generate title-only embedding for measure '\(measureData.title ?? "Untitled")': \(error)"
+                )
+            }
+
+            // Generate full-context embedding (for semantic search & LLM RAG)
+            do {
+                _ = try await embeddingService.generateMeasureEmbedding(
+                    measure: measureData, variant: .fullContext)
+                print(
+                    "✅ Generated full-context embedding for measure: \(measureData.title ?? "Untitled")"
+                )
+            } catch {
+                print(
+                    "⚠️ Failed to generate full-context embedding for measure '\(measureData.title ?? "Untitled")': \(error)"
+                )
+            }
+        }
+
+        return createdMeasure
     }
 
     /// Updates existing Measure from form data with duplicate prevention.

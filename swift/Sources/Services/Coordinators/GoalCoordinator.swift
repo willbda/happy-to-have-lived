@@ -99,17 +99,18 @@ public final class GoalCoordinator: Sendable {
                     continue
                 }
 
-                targets.append((
-                    measureId: measureId,
-                    value: target.targetValue,
-                    notes: target.notes
-                ))
+                targets.append(
+                    (
+                        measureId: measureId,
+                        value: target.targetValue,
+                        notes: target.notes
+                    ))
             }
 
             return targets
         }()
 
-        return try await database.write { db in
+        let createdGoal = try await database.write { db in
             // Validate resolved measureIds still exist (defensive - measures created above)
             for target in resolvedTargets {
                 let measureExists = try Measure.find(target.measureId).fetchOne(db) != nil
@@ -242,6 +243,38 @@ public final class GoalCoordinator: Sendable {
             // 9. Return Goal (caller accesses full data via GoalsQuery)
             return goal
         }
+
+        // 10. Generate embeddings asynchronously (fire-and-forget, don't block return)
+        // Fire task AFTER database.write completes to avoid blocking goal creation
+        let goalId = createdGoal.id
+        Task.detached(priority: .background) { [database = self.database] in
+            // Fetch full GoalData and generate both embedding variants
+            let repository = GoalRepository(database: database)
+            guard let goalData = try? await repository.fetchAll().first(where: { $0.id == goalId }) else {
+                print("⚠️ Failed to fetch GoalData for embedding generation (goal: \(goalId))")
+                return
+            }
+
+            let embeddingService = EmbeddingGenerationService(database: database)
+
+            // Generate title-only embedding (for duplicate detection)
+            do {
+                _ = try await embeddingService.generateGoalEmbedding(goal: goalData, variant: .titleOnly)
+                print("✅ Generated title-only embedding for goal: \(goalData.title ?? "Untitled")")
+            } catch {
+                print("⚠️ Failed to generate title-only embedding for goal '\(goalData.title ?? "Untitled")': \(error)")
+            }
+
+            // Generate full-context embedding (for semantic search & LLM RAG)
+            do {
+                _ = try await embeddingService.generateGoalEmbedding(goal: goalData, variant: .fullContext)
+                print("✅ Generated full-context embedding for goal: \(goalData.title ?? "Untitled")")
+            } catch {
+                print("⚠️ Failed to generate full-context embedding for goal '\(goalData.title ?? "Untitled")': \(error)")
+            }
+        }
+
+        return createdGoal
     }
 
     /// Updates existing Goal with new form data.
@@ -476,8 +509,8 @@ public final class GoalCoordinator: Sendable {
             // 3. Delete TermGoalAssignment if exists
             if let assignment = goalData.termAssignment {
                 try db.execute(
-                    sql: "DELETE FROMid.uuidString.lowercased()gnments WHERE id = ?",
-                    arguments: [assignment.id.uuidString]
+                    sql: "DELETE FROM termGoalAssignments WHERE id = ?",
+                    arguments: [assignment.id.uuidString.lowercased()]
                 )
             }
 

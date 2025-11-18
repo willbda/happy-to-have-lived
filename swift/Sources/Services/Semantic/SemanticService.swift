@@ -195,6 +195,7 @@ public final class SemanticService: Sendable {
                 vector: vector,
                 entityType: "semantic_cache",  // Generic cache (not tied to specific entity)
                 entityId: UUID(),  // Placeholder UUID (not entity-specific)
+                sourceVariant: "full_context",  // Generic embeddings are full-context
                 textHash: textHash,
                 sourceText: sourceText,
                 embeddingModel: configuration.embeddingModel

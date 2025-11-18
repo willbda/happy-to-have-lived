@@ -350,6 +350,7 @@ public final class EmbeddingCacheRepository: Sendable {
             id: id,
             entityType: row.entityType,
             entityId: entityId,
+            sourceVariant: row.sourceVariant,
             textHash: row.textHash,
             sourceText: row.sourceText,
             embedding: row.embedding,  // Keep as Data (matches schema)
@@ -369,6 +370,7 @@ private struct EmbeddingCacheRow: Decodable, FetchableRecord, Sendable {
     let id: String
     let entityType: String
     let entityId: String
+    let sourceVariant: String
     let textHash: String
     let sourceText: String
     let embedding: Data

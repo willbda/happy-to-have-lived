@@ -86,7 +86,7 @@ public final class PersonalValueCoordinator: Sendable {
         // Insert to database (atomic transaction)
         // Note: Database errors are rare here since we validated above
         // If they occur, let them propagate as-is (likely indicates data corruption)
-        let value = try await database.write { db in
+        let createdValue = try await database.write { db in
             try PersonalValue.insert {
                 PersonalValue.Draft(
                     id: UUID(),
@@ -107,9 +107,48 @@ public final class PersonalValueCoordinator: Sendable {
         // Phase 2: Validate complete entity (defensive check)
         // Throws: ValidationError.invalidPriority if model assembly failed
         // This should never fail if Phase 1 passed and model init is correct
-        try PersonalValueValidation.validateComplete(value)
+        try PersonalValueValidation.validateComplete(createdValue)
 
-        return value
+        // Phase 3: Generate embeddings asynchronously (fire-and-forget, don't block return)
+        // Fire task AFTER database.write completes to avoid blocking value creation
+        let valueId = createdValue.id
+        Task.detached(priority: .background) { [database = self.database] in
+            // Fetch full PersonalValueData and generate both embedding variants
+            let repository = PersonalValueRepository(database: database)
+            guard let valueData = try? await repository.fetchAll().first(where: { $0.id == valueId })
+            else {
+                print(
+                    "⚠️ Failed to fetch PersonalValueData for embedding generation (value: \(valueId))"
+                )
+                return
+            }
+
+            let embeddingService = EmbeddingGenerationService(database: database)
+
+            // Generate title-only embedding (for duplicate detection)
+            do {
+                _ = try await embeddingService.generateValueEmbedding(
+                    value: valueData, variant: .titleOnly)
+                print("✅ Generated title-only embedding for value: \(valueData.title)")
+            } catch {
+                print(
+                    "⚠️ Failed to generate title-only embedding for value '\(valueData.title)': \(error)"
+                )
+            }
+
+            // Generate full-context embedding (for semantic search & LLM RAG)
+            do {
+                _ = try await embeddingService.generateValueEmbedding(
+                    value: valueData, variant: .fullContext)
+                print("✅ Generated full-context embedding for value: \(valueData.title)")
+            } catch {
+                print(
+                    "⚠️ Failed to generate full-context embedding for value '\(valueData.title)': \(error)"
+                )
+            }
+        }
+
+        return createdValue
     }
 
     /// Updates existing PersonalValue from form data with two-phase validation.

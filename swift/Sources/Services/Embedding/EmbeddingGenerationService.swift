@@ -37,6 +37,7 @@ import Foundation
 import Models
 import Database
 import SQLiteData
+import GRDB
 import CryptoKit
 
 /// Service for generating and caching entity-specific embeddings
@@ -336,6 +337,14 @@ public final class EmbeddingGenerationService: Sendable {
 
             let now = Date()
 
+            // Format dates for SQLite/CloudKit compatibility
+            // CloudKit requires "yyyy-MM-dd HH:mm:ss" format (space, not 'T', no 'Z')
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            let dateString = formatter.string(from: now)
+
             try db.execute(
                 sql: """
                     INSERT INTO semanticEmbeddings (
@@ -353,8 +362,8 @@ public final class EmbeddingGenerationService: Sendable {
                     embeddingData,
                     "NLEmbedding-sentence-english",
                     vector.values.count,  // dimensionality (should be 768)
-                    now.ISO8601Format(),
-                    now.ISO8601Format(),
+                    dateString,  // SQLite format: "2025-11-18 03:14:22"
+                    dateString,
                 ]
             )
         }

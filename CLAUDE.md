@@ -76,37 +76,45 @@ The database uses 3NF normalization with three conceptual layers:
 
 ## Current Development Status
 
-### Phase Progress (v0.6.0)
+### Phase Progress (v0.7.0)
 - ✅ Phase 1-2: Model compilation
 - ✅ Phase 3: Coordinator pattern implementation
 - ✅ Phase 4: Validation layer integration
 - ✅ Phase 5: Repository + ViewModel pattern (completed 2025-11-13)
-- ⏳ Phase 6: Testing and refinement
-- ⏳ Phase 7: HealthKit + Dashboard features
+- ✅ Phase 6: Coordinator composition + Semantic services (completed 2025-11-17)
+- ⏳ Phase 7: LLM Tool Integration + Dashboard features
 
-### Recent Completions (2025-11-13)
-- ✅ **Repository Pattern Complete** - All 4 entities have working repositories
-- ✅ **ViewModel Migration Complete** - All list views migrated to @Observable pattern
-- ✅ **Query Wrappers Eliminated** - `Sources/App/Views/Queries/` directory empty
-- ✅ **Sendable Conformance** - All repositories Swift 6 compliant
-- ✅ **JSON Aggregation** - Goals and Actions use single-query pattern (2-3x faster)
+### Recent Completions (2025-11-17)
+- ✅ **Measure Coordinator Composition** - Single source of truth for all measure creation
+  - MeasureCoordinator.getOrCreate() idempotent pattern
+  - GoalCoordinator and ActionCoordinator use coordinator composition
+  - UI layer removed from direct database access
+  - Duplicate prevention across all creation paths
+- ✅ **Schema Updated** - Removed UNIQUE constraints for CloudKit sync
+  - Application-level uniqueness via coordinators
+  - Backward compatible with existing databases
+- ✅ **Semantic Services Scaffolded** - Ready for embedding + LLM integration
+  - EmbeddingGenerationService for NLEmbedding vectors
+  - LLM ViewModels (GoalCoachViewModel, ValuesAlignmentCoach, ActionSuggestions)
+  - SemanticMatchingService for similarity search
+  - MeasureDeduplicationCoordinator for catalog cleanup
 
 ### Active Work Areas
-1. **Testing** - Manual and automated testing of ViewModels
-2. **CSV Import/Export** - Enhanced parsing with quoted field support
-3. **HealthKit Integration** - Live tracking service implementation
-4. **Dashboard/Analytics** - Views not started yet
-5. **Apple Foundation Model** - Planning for on-device LLM usage
+1. **LLM Tool Integration** - Connect Foundation Models tools to coordinators
+2. **Embedding Backfill** - Pre-generate embeddings for existing entities
+3. **Semantic Deduplication** - Use embeddings for intelligent measure matching
+4. **Dashboard/Analytics** - Aggregation queries using measure relationships
+5. **HealthKit Integration** - Live tracking with measure coordinator
 
 ### Known Issues
-- HealthKit data not flowing to staging table
-- Dashboard/analytics views not started
+- EmbeddingGenerationService needs GRDB import fix (minor)
+- LLM ViewModels scaffolded but not integrated with LanguageModelSession yet
 
 ## Code Patterns and Conventions
 
 ### Creating Entities
 
-Always use coordinators for multi-model writes:
+**Always use coordinators for multi-model writes:**
 
 ```swift
 // Good: Use coordinator for atomic multi-model creation
@@ -119,6 +127,85 @@ try await database.write { db in
     try goal.save(to: db)
 }
 ```
+
+### Coordinator Composition Pattern (NEW - v0.7.0)
+
+**Key Pattern**: Coordinators can call other coordinators for single source of truth.
+
+**Example: MeasureCoordinator as Service Coordinator**
+
+All measure creation (goals, actions, HealthKit, UI) goes through `MeasureCoordinator.getOrCreate()`:
+
+```swift
+// Pattern: Idempotent get-or-create
+let coordinator = MeasureCoordinator(database: database)
+let measure = try await coordinator.getOrCreate(
+    unit: "km",
+    measureType: "distance",
+    title: "Kilometers"  // Optional custom title
+)
+// → Returns existing if duplicate, creates if new
+```
+
+**Integration with GoalCoordinator:**
+
+```swift
+public func create(from formData: GoalFormData) async throws -> Goal {
+    // STEP 1: Pre-transaction measure resolution
+    let measureCoordinator = MeasureCoordinator(database: database)
+    var resolvedTargets: [(measureId: UUID, value: Double)] = []
+
+    for target in formData.measureTargets where target.isValid {
+        // Pattern 1: User selected existing measure
+        if let existingId = target.measureId {
+            resolvedTargets.append((existingId, target.targetValue))
+        }
+        // Pattern 2: User creating new measure inline
+        else if let unit = target.unit, let measureType = target.measureType {
+            let measure = try await measureCoordinator.getOrCreate(
+                unit: unit,
+                measureType: measureType,
+                title: target.measureTitle
+            )
+            resolvedTargets.append((measure.id, target.targetValue))
+        }
+    }
+
+    // STEP 2: Main transaction with guaranteed measure IDs
+    return try await database.write { db in
+        let expectation = try Expectation.insert { ... }.fetchOne(db)!
+        let goal = try Goal.insert { ... }.fetchOne(db)!
+
+        // Use resolved measure IDs (never fails on missing measure)
+        for (measureId, targetValue) in resolvedTargets {
+            try ExpectationMeasure.insert {
+                ExpectationMeasure.Draft(
+                    expectationId: expectation.id,
+                    measureId: measureId,
+                    targetValue: targetValue
+                )
+            }.execute(db)
+        }
+
+        return goal
+    }
+}
+```
+
+**Why This Pattern:**
+- ✅ Single source of truth: All measures via getOrCreate()
+- ✅ Duplicate prevention: Idempotent across all creation paths
+- ✅ Atomic safety: Measures created before transaction, IDs guaranteed
+- ✅ Composable: Other coordinators can call MeasureCoordinator
+- ✅ User experience: Users can create measures inline during goal/action creation
+
+**Where It's Used:**
+- GoalCoordinator → calls MeasureCoordinator
+- ActionCoordinator → calls MeasureCoordinator
+- MetricTargetRow (UI) → calls MeasureCoordinator
+- HealthKitImportService → calls MeasureCoordinator
+
+See `swift/docs/20251117_MEASURE_COORDINATOR_COMPOSITION.md` for complete architecture details.
 
 ### Validation Pattern
 

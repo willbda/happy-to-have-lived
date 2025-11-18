@@ -63,7 +63,7 @@ public final class GoalFormViewModel {
         actionPlan: String?,
         expectedTermLength: Int?,
         // Relationships
-        metricTargets: [MetricTargetInput],
+        measureTargets: [ExpectationMeasureFormData],
         valueAlignments: [ValueAlignmentInput],
         termId: UUID?
     ) async throws -> Goal {
@@ -81,7 +81,7 @@ public final class GoalFormViewModel {
             targetDate: targetDate,
             actionPlan: actionPlan,
             expectedTermLength: expectedTermLength,
-            metricTargets: metricTargets,
+            measureTargets: measureTargets,
             valueAlignments: valueAlignments,
             termId: termId
         )
@@ -134,7 +134,7 @@ public final class GoalFormViewModel {
         targetDate: Date?,
         actionPlan: String?,
         expectedTermLength: Int?,
-        metricTargets: [MetricTargetInput],
+        measureTargets: [ExpectationMeasureFormData],
         valueAlignments: [ValueAlignmentInput],
         termId: UUID?
     ) async throws -> Goal {
@@ -152,7 +152,7 @@ public final class GoalFormViewModel {
             targetDate: targetDate,
             actionPlan: actionPlan,
             expectedTermLength: expectedTermLength,
-            metricTargets: metricTargets,
+            measureTargets: measureTargets,
             valueAlignments: valueAlignments,
             termId: termId
         )

@@ -71,12 +71,50 @@ public final class GoalCoordinator: Sendable {
             try await checkForDuplicates(title: formData.title)
         }
 
+        // COORDINATOR COMPOSITION: Get-or-create measures BEFORE transaction
+        // This ensures all measures exist before we start the atomic write
+        let measureCoordinator = MeasureCoordinator(database: database)
+
+        // Build resolved targets array (Swift 6: use compactMap for immutable result)
+        let resolvedTargets: [(measureId: UUID, value: Double, notes: String?)] = try await {
+            var targets: [(measureId: UUID, value: Double, notes: String?)] = []
+
+            for target in formData.measureTargets where target.isValid {
+                let measureId: UUID
+
+                if let existingId = target.measureId {
+                    // Pattern 1: Use existing measure (measureId provided)
+                    measureId = existingId
+                } else if let unit = target.unit, let measureType = target.measureType {
+                    // Pattern 2: Get-or-create measure (unit + measureType provided)
+                    // This is idempotent - returns existing measure if duplicate found
+                    let measure = try await measureCoordinator.getOrCreate(
+                        unit: unit,
+                        measureType: measureType,
+                        title: target.measureTitle
+                    )
+                    measureId = measure.id
+                } else {
+                    // Invalid target (should be caught by isValid, but defensive)
+                    continue
+                }
+
+                targets.append((
+                    measureId: measureId,
+                    value: target.targetValue,
+                    notes: target.notes
+                ))
+            }
+
+            return targets
+        }()
+
         return try await database.write { db in
-            // Validate measureIds exist (if any targets provided)
-            for target in formData.metricTargets where target.measureId != nil {
-                let measureExists = try Measure.find(target.measureId!).fetchOne(db) != nil
+            // Validate resolved measureIds still exist (defensive - measures created above)
+            for target in resolvedTargets {
+                let measureExists = try Measure.find(target.measureId).fetchOne(db) != nil
                 guard measureExists else {
-                    throw ValidationError.invalidMeasure("Measure \(target.measureId!) not found")
+                    throw ValidationError.invalidMeasure("Measure \(target.measureId) not found")
                 }
             }
 
@@ -128,15 +166,16 @@ public final class GoalCoordinator: Sendable {
             .returning { $0 }
             .fetchOne(db)!
 
-            // 6. Insert ExpectationMeasure records for each valid metric target
-            for target in formData.metricTargets where target.isValid {
+            // 6. Insert ExpectationMeasure records for each resolved metric target
+            // Uses resolvedTargets (measures guaranteed to exist from coordinator composition)
+            for target in resolvedTargets {
                 try ExpectationMeasure.insert {
                     ExpectationMeasure.Draft(
                         id: UUID(),
                         freeformNotes: target.notes?.isEmpty == true ? nil : target.notes,
                         expectationId: expectation.id,
-                        measureId: target.measureId!,  // Already validated above
-                        targetValue: target.targetValue,
+                        measureId: target.measureId,  // From resolved targets (guaranteed to exist)
+                        targetValue: target.value,
                         createdAt: Date()
                     )
                 }
@@ -174,13 +213,12 @@ public final class GoalCoordinator: Sendable {
             }
 
             // Phase 2: Validate complete entity graph (referential integrity)
-            // Build the arrays for validation
-            let measurements = formData.metricTargets.compactMap { target -> ExpectationMeasure? in
-                guard let measureId = target.measureId, target.isValid else { return nil }
-                return ExpectationMeasure(
+            // Build the arrays for validation using resolved targets
+            let measurements = resolvedTargets.map { target -> ExpectationMeasure in
+                ExpectationMeasure(
                     expectationId: expectation.id,
-                    measureId: measureId,
-                    targetValue: target.targetValue,
+                    measureId: target.measureId,  // From resolved targets
+                    targetValue: target.value,
                     createdAt: Date(),
                     freeformNotes: target.notes,
                     id: UUID()
@@ -242,7 +280,7 @@ public final class GoalCoordinator: Sendable {
 
         return try await database.write { db in
             // Validate new measureIds exist (if any)
-            for target in formData.metricTargets where target.measureId != nil {
+            for target in formData.measureTargets where target.measureId != nil {
                 let measureExists = try Measure.find(target.measureId!).fetchOne(db) != nil
                 guard measureExists else {
                     throw ValidationError.invalidMeasure("Measure \(target.measureId!) not found")
@@ -303,7 +341,7 @@ public final class GoalCoordinator: Sendable {
             }
 
             // 4. Insert new ExpectationMeasures from formData
-            for target in formData.metricTargets where target.isValid {
+            for target in formData.measureTargets where target.isValid {
                 try ExpectationMeasure.insert {
                     ExpectationMeasure.Draft(
                         id: UUID(),  // New ID for new record
@@ -358,7 +396,7 @@ public final class GoalCoordinator: Sendable {
             }
 
             // Phase 2: Validate complete entity graph
-            let newMeasurements = formData.metricTargets.compactMap {
+            let newMeasurements = formData.measureTargets.compactMap {
                 target -> ExpectationMeasure? in
                 guard let measureId = target.measureId, target.isValid else { return nil }
                 return ExpectationMeasure(

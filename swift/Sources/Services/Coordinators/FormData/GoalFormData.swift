@@ -37,9 +37,15 @@ public struct GoalFormData: Sendable {
 
     // MARK: - Relationships
 
-    public let metricTargets: [MetricTargetInput]
+    /// Measurement targets for this goal (converted to ExpectationMeasure records)
+    /// Example: "Run 120 km" → ExpectationMeasure(measureId: km, targetValue: 120)
+    public let measureTargets: [ExpectationMeasureFormData]
+
+    /// Value alignments for this goal (converted to GoalRelevance records)
     public let valueAlignments: [ValueAlignmentInput]
-    public let termId: UUID?  // Optional term assignment
+
+    /// Optional term assignment (converted to TermGoalAssignment record)
+    public let termId: UUID?
 
     // MARK: - Initialization
 
@@ -53,7 +59,7 @@ public struct GoalFormData: Sendable {
         targetDate: Date? = nil,
         actionPlan: String? = nil,
         expectedTermLength: Int? = nil,
-        metricTargets: [MetricTargetInput] = [],
+        measureTargets: [ExpectationMeasureFormData] = [],
         valueAlignments: [ValueAlignmentInput] = [],
         termId: UUID? = nil
     ) {
@@ -66,7 +72,7 @@ public struct GoalFormData: Sendable {
         self.targetDate = targetDate
         self.actionPlan = actionPlan
         self.expectedTermLength = expectedTermLength
-        self.metricTargets = metricTargets
+        self.measureTargets = measureTargets
         self.valueAlignments = valueAlignments
         self.termId = termId
     }

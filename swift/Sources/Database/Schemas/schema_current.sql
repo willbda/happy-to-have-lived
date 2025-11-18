@@ -605,6 +605,77 @@ CREATE INDEX idx_llm_messages_session ON llmMessages(conversationId, sessionNumb
 -- =============================================================================
 
 -- =============================================================================
+-- DEDUPLICATION TRACKING SCHEMA
+-- =============================================================================
+
+-- DuplicateCandidates: Track potential duplicates for user review
+-- Note: UNIQUE constraint removed for CloudKit sync compatibility
+-- Uniqueness enforced at application level (DeduplicationService)
+CREATE TABLE duplicateCandidates (
+    id TEXT PRIMARY KEY,
+
+    -- Entity classification
+    entityType TEXT NOT NULL CHECK(entityType IN (
+        'action', 'expectation', 'measure', 'personalValue', 'timePeriod',
+        'goal', 'milestone', 'obligation', 'goalTerm'
+    )),
+
+    -- The two entities being compared
+    entity1Id TEXT NOT NULL,
+    entity2Id TEXT NOT NULL,
+
+    -- Similarity analysis
+    similarity REAL NOT NULL CHECK(similarity >= 0.0 AND similarity <= 1.0),
+    severity TEXT NOT NULL CHECK(severity IN ('exact', 'high', 'moderate', 'low')),
+
+    -- Processing state
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'merged', 'ignored', 'resolved')),
+
+    -- Temporal metadata
+    createdAt TEXT NOT NULL,
+    reviewedAt TEXT,
+    resolvedAt TEXT,
+
+    -- Resolution details
+    resolution TEXT,
+    resolutionNotes TEXT
+);
+
+-- Index for finding unresolved duplicates by type
+CREATE INDEX idx_duplicate_candidates_pending ON duplicateCandidates(entityType, status)
+WHERE status = 'pending';
+
+-- Index for finding duplicates for a specific entity
+CREATE INDEX idx_duplicate_candidates_entity1 ON duplicateCandidates(entityType, entity1Id);
+CREATE INDEX idx_duplicate_candidates_entity2 ON duplicateCandidates(entityType, entity2Id);
+
+-- Index for high-severity duplicates requiring attention
+CREATE INDEX idx_duplicate_candidates_severity ON duplicateCandidates(severity, status)
+WHERE severity IN ('exact', 'high') AND status = 'pending';
+
+-- EntitySignatures: Precomputed MinHash signatures for deduplication
+-- Note: UNIQUE constraint removed for CloudKit sync compatibility
+-- Uniqueness enforced at application level (DeduplicationService)
+CREATE TABLE entitySignatures (
+    id TEXT PRIMARY KEY,
+
+    -- Entity reference
+    entityType TEXT NOT NULL,
+    entityId TEXT NOT NULL,
+
+    -- Signature data
+    signature BLOB NOT NULL,
+    semanticContent TEXT NOT NULL,
+
+    -- Metadata
+    computedAt TEXT NOT NULL,
+    lshVersion INTEGER NOT NULL DEFAULT 1
+);
+
+-- Index for fast signature lookups
+CREATE INDEX idx_entity_signatures_lookup ON entitySignatures(entityType, entityId);
+
+-- =============================================================================
 -- MIGRATION PATH FROM CURRENT SCHEMA
 -- =============================================================================
 --

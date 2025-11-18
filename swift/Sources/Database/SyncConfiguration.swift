@@ -45,7 +45,12 @@ public enum SyncConfiguration {
             // =================================================================
             // SEMANTIC/ML INFRASTRUCTURE (1 table)
             // =================================================================
-            EmbeddingCacheEntry.self  // CREATE TABLE semanticEmbeddings (schema_current.sql:~280)
+            EmbeddingCacheEntry.self,  // CREATE TABLE semanticEmbeddings (schema_current.sql:397)
+            // =================================================================
+            // DEDUPLICATION INFRASTRUCTURE (2 tables)
+            // =================================================================
+            DuplicateCandidate.self,  // CREATE TABLE duplicateCandidates (schema_current.sql:614)
+            EntitySignature.self  // CREATE TABLE entitySignatures (schema_current.sql:659)
                 // =================================================================
                 // EXCLUDED FROM SYNC (3 tables)
                 // =================================================================

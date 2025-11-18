@@ -1,11 +1,16 @@
 -- DEDUPLICATION SCHEMA
 -- Written by Claude Code on 2025-11-12
+-- INTEGRATED: 2025-11-17 into schema_current.sql (lines 607-676)
 --
 -- PURPOSE: Tables for tracking and managing duplicate candidates
 -- STRATEGY: Store similarity scores, allow user review and resolution
 --
 -- This schema supports both proactive (form validation) and reactive (data hygiene)
 -- duplicate detection workflows.
+--
+-- NOTE: This file is now a reference only. The actual schema is in:
+-- swift/Sources/Database/Schemas/schema_current.sql (DEDUPLICATION TRACKING SCHEMA section)
+-- UNIQUE constraints were removed for CloudKit sync compatibility.
 
 -- DuplicateCandidates: Track potential duplicates for user review
 CREATE TABLE duplicateCandidates (

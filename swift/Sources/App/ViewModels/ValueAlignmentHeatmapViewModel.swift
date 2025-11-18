@@ -26,10 +26,11 @@
 // ```
 
 import Foundation
+import Observation
+import Dependencies
+import Services
 import Models
 import Database
-import Services
-import Observation
 
 /// ViewModel for Value Alignment Heatmap
 ///

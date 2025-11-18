@@ -50,7 +50,7 @@ public struct CreateGoalTool: Tool {
         let urgency: Int
 
         @Guide(description: "Array of metric targets with measureId and targetValue")
-        let metricTargets: [LLMMetricTargetInput]?
+        let measureTargets: [LLMExpectationMeasureFormData]?
 
         @Guide(description: "Array of value alignments with valueId and strength")
         let valueAlignments: [LLMValueAlignmentInput]?
@@ -69,7 +69,7 @@ public struct CreateGoalTool: Tool {
             targetDate: String? = nil,
             importance: Int = 5,
             urgency: Int = 5,
-            metricTargets: [LLMMetricTargetInput]? = nil,
+            measureTargets: [LLMExpectationMeasureFormData]? = nil,
             valueAlignments: [LLMValueAlignmentInput]? = nil,
             termId: String? = nil,
             checkDuplicates: Bool = true
@@ -81,7 +81,7 @@ public struct CreateGoalTool: Tool {
             self.targetDate = targetDate
             self.importance = importance
             self.urgency = urgency
-            self.metricTargets = metricTargets
+            self.measureTargets = measureTargets
             self.valueAlignments = valueAlignments
             self.termId = termId
             self.checkDuplicates = checkDuplicates
@@ -145,7 +145,7 @@ public struct CreateGoalTool: Tool {
             targetDate: parsedTargetDate,
             actionPlan: arguments.actionPlan,
             expectedTermLength: nil,
-            metricTargets: convertMetricTargets(arguments.metricTargets ?? []),
+            measureTargets: convertMetricTargets(arguments.measureTargets ?? []),
             valueAlignments: convertValueAlignments(arguments.valueAlignments ?? []),
             termId: arguments.termId.flatMap { UUID(uuidString: $0) }
         )
@@ -232,12 +232,12 @@ public struct CreateGoalTool: Tool {
     }
 
     /// Convert metric target inputs from LLM (String IDs) to form data (UUID)
-    private func convertMetricTargets(_ inputs: [LLMMetricTargetInput]) -> [Services
-        .MetricTargetInput]
+    private func convertMetricTargets(_ inputs: [LLMExpectationMeasureFormData]) -> [Services
+        .ExpectationMeasureFormData]
     {
         inputs.compactMap { input in
             guard let measureId = UUID(uuidString: input.measureId) else { return nil }
-            return Services.MetricTargetInput(
+            return Services.ExpectationMeasureFormData(
                 measureId: measureId,
                 targetValue: input.targetValue,
                 notes: input.notes
@@ -265,7 +265,7 @@ public struct CreateGoalTool: Tool {
 /// Input for metric targets (LLM-generated, uses String IDs)
 @available(iOS 26.0, macOS 26.0, *)
 @Generable
-public struct LLMMetricTargetInput: Codable {
+public struct LLMExpectationMeasureFormData: Codable {
     public let measureId: String
     public let targetValue: Double
     public let notes: String?

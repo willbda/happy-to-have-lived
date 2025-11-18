@@ -152,7 +152,7 @@ public enum ValidationUtilities {
     /// **Usage**:
     /// ```swift
     /// try requireFieldInRange(
-    ///     formData.metricTargets,
+    ///     formData.measureTargets,
     ///     1...,
     ///     keyPath: \.targetValue,
     ///     field: "Metric target values"

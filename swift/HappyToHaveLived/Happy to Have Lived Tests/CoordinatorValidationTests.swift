@@ -558,9 +558,9 @@ struct GoalValidationTests {
             title: "Test Goal",
             expectationImportance: 8,
             expectationUrgency: 5,
-            metricTargets: [
-                MetricTargetInput(measureId: UUID(), targetValue: 5.0),
-                MetricTargetInput(measureId: UUID(), targetValue: 100.0),
+            measureTargets: [
+                ExpectationMeasureFormData(measureId: UUID(), targetValue: 5.0),
+                ExpectationMeasureFormData(measureId: UUID(), targetValue: 100.0),
             ]
         )
 
@@ -574,8 +574,8 @@ struct GoalValidationTests {
             title: "Test Goal",
             expectationImportance: 8,
             expectationUrgency: 5,
-            metricTargets: [
-                MetricTargetInput(measureId: UUID(), targetValue: 0.0)
+            measureTargets: [
+                ExpectationMeasureFormData(measureId: UUID(), targetValue: 0.0)
             ]
         )
 
@@ -601,8 +601,8 @@ struct GoalValidationTests {
             title: "Test Goal",
             expectationImportance: 8,
             expectationUrgency: 5,
-            metricTargets: [
-                MetricTargetInput(measureId: UUID(), targetValue: -5.0)
+            measureTargets: [
+                ExpectationMeasureFormData(measureId: UUID(), targetValue: -5.0)
             ]
         )
 

@@ -142,7 +142,7 @@ public enum GoalValidation {
 
         // Rule: All metric targets must be positive
         try ValidationUtilities.requireFieldInRange(
-            formData.metricTargets,
+            formData.measureTargets,
             1...,
             keyPath: \.targetValue,
             field: "Metric target values"

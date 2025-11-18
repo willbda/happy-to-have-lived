@@ -103,7 +103,7 @@ public struct GetGoalsTool: Tool {
                 targetDate: goal.targetDate?.ISO8601Format(),
                 importance: goal.expectationImportance,
                 urgency: goal.expectationUrgency,
-                metricTargets: goal.measureTargets.map { target in
+                measureTargets: goal.measureTargets.map { target in
                     MetricTarget(
                         measureName: target.measureTitle ?? "Unknown",
                         targetValue: target.targetValue,
@@ -147,7 +147,7 @@ public struct GoalSummary: Codable {
     public let targetDate: String?
     public let importance: Int
     public let urgency: Int
-    public let metricTargets: [MetricTarget]
+    public let measureTargets: [MetricTarget]
     public let alignedValues: [AlignedValue]
 }
 

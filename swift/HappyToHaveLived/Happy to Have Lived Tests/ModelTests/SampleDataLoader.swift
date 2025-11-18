@@ -107,7 +107,7 @@ public struct GoalData: Decodable, Sendable {
     public let targetDate: String?
     public let actionPlan: String?
     public let expectedTermLength: Int?
-    public let metricTargets: [MetricTargetData]
+    public let measureTargets: [MetricTargetData]
     public let valueAlignments: [ValueAlignmentData]
 
     /// Convert to GoalFormData, mapping indices to UUIDs
@@ -125,8 +125,8 @@ public struct GoalData: Decodable, Sendable {
             targetDate: targetDate.flatMap { ISO8601DateFormatter().date(from: $0) },
             actionPlan: actionPlan,
             expectedTermLength: expectedTermLength,
-            metricTargets: metricTargets.map { target in
-                MetricTargetInput(
+            measureTargets: measureTargets.map { target in
+                ExpectationMeasureFormData(
                     measureId: measureIds[target.measureIndex],
                     targetValue: target.targetValue,
                     notes: target.notes

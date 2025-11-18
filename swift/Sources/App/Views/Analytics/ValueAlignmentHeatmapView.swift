@@ -26,7 +26,6 @@
 
 import SwiftUI
 import Models
-import ViewModels
 
 /// Value Alignment Heatmap view
 ///

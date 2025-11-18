@@ -64,7 +64,9 @@ public struct DashboardView: View {
                 }
             }
             .navigationTitle("Dashboard")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
+            #endif
         }
     }
 

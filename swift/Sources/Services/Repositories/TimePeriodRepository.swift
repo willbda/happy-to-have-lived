@@ -318,6 +318,63 @@ public final class TimePeriodRepository: BaseRepository<TimePeriodData> {
         }
     }
 
+    /// Fetch active terms (status = active or planned, endDate >= now)
+    ///
+    /// **Use Case**: Dashboard showing current/upcoming planning periods
+    /// **Implementation**: Combines status filter + date filter
+    /// - Status: active OR planned (excludes completed, cancelled, delayed, on_hold)
+    /// - Date: endDate >= now (excludes past terms)
+    ///
+    /// **Pattern**: Convenience method for common "show active terms" use case
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// SELECT * FROM goalTerms gt JOIN timePeriods tp
+    /// WHERE gt.status IN ('active', 'planned')
+    ///   AND tp.endDate >= date('now')
+    /// ORDER BY gt.termNumber DESC
+    /// ```
+    public func fetchActiveTerms() async throws -> [TimePeriodData] {
+        try await read { db in
+            // Fetch terms with active or planned status AND endDate >= now
+            let termPeriods = try GoalTerm.all
+                .where { $0.status == .active || $0.status == .planned }
+                .join(TimePeriod.all) { termJoin, periodJoin in
+                    termJoin.timePeriodId.eq(periodJoin.id)
+                        && periodJoin.endDate >= Date()
+                }
+                .order { $0.0.termNumber.desc() }
+                .fetchAll(db)
+
+            // Bulk fetch assignments (same pattern as fetchByStatus)
+            let termIds = termPeriods.map { $0.0.id }
+            let allAssignments = try TermGoalAssignment.all
+                .where { termIds.contains($0.termId) }
+                .fetchAll(db)
+
+            let assignmentsByTerm = Dictionary(grouping: allAssignments, by: { $0.termId })
+
+            return termPeriods.map { (term, timePeriod) in
+                let goalIds = assignmentsByTerm[term.id]?
+                    .map { $0.goalId }
+                    .sorted { $0.uuidString < $1.uuidString }
+
+                return TimePeriodData(
+                    id: term.id,
+                    termNumber: term.termNumber,
+                    theme: term.theme,
+                    reflection: term.reflection,
+                    status: term.status?.rawValue,
+                    timePeriodId: timePeriod.id,
+                    timePeriodTitle: timePeriod.title,
+                    startDate: timePeriod.startDate,
+                    endDate: timePeriod.endDate,
+                    assignedGoalIds: goalIds
+                )
+            }
+        }
+    }
+
     /// Check if overlapping terms exist (for validation)
     ///
     /// **Use Case**: Prevent creating Term 6 that overlaps with Term 5's dates

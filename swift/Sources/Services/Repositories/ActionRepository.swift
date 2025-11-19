@@ -420,6 +420,51 @@ public final class ActionRepository: BaseRepository<ActionData> {
         }
     }
 
+    /// Aggregate measurements by measure for a goal
+    ///
+    /// **Use Case**: Calculate total progress toward goal targets
+    /// **Implementation**: SUM(ma.value) grouped by measureId for actions contributing to goal
+    ///
+    /// **Returns**: Dictionary mapping measureId → total value
+    /// **Example**: { uuid1: 87.5, uuid2: 15.0 } means 87.5 km and 15 hours logged
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// SELECT ma.measureId, SUM(ma.value) as total
+    /// FROM actionGoalContributions agc
+    /// JOIN measuredActions ma ON agc.actionId = ma.actionId
+    /// WHERE agc.goalId = ?
+    /// GROUP BY ma.measureId
+    /// ```
+    ///
+    /// **Use Case**: ProgressCalculationService needs this to compare actuals vs targets
+    public func aggregateMeasurements(forGoal goalId: UUID) async throws -> [UUID: Double] {
+        try await read { db in
+            let sql = """
+                SELECT
+                    ma.measureId,
+                    COALESCE(SUM(ma.value), 0.0) as total
+                FROM actionGoalContributions agc
+                INNER JOIN measuredActions ma ON agc.actionId = ma.actionId
+                WHERE agc.goalId = ?
+                GROUP BY ma.measureId
+                """
+
+            let rows = try Row.fetchAll(db, sql: sql, arguments: [goalId])
+
+            var result: [UUID: Double] = [:]
+            for row in rows {
+                if let measureIdString: String = row["measureId"],
+                   let measureId = UUID(uuidString: measureIdString),
+                   let total: Double = row["total"] {
+                    result[measureId] = total
+                }
+            }
+
+            return result
+        }
+    }
+
     // MARK: - Error Mapping Override
 
     /// Map database errors to user-friendly validation errors

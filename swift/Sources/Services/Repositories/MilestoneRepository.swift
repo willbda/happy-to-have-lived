@@ -115,6 +115,149 @@ public final class MilestoneRepository: Sendable {
         }
     }
 
+    /// Fetch milestones filtered by date range for export
+    ///
+    /// **Implementation**: Same as fetchAll() + WHERE e.logTime BETWEEN ? AND ?
+    /// **Date Filter**: Uses expectation.logTime (when milestone was created)
+    /// **Pattern**: Matches GoalRepository.fetchForExport() for consistency
+    public func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [MilestoneWithDetails] {
+        // Build WHERE clause
+        var whereClause = ""
+        var arguments: [DatabaseValueConvertible] = []
+
+        if let start = startDate, let end = endDate {
+            whereClause = "WHERE e.logTime BETWEEN ? AND ?"
+            arguments = [start, end]
+        } else if let start = startDate {
+            whereClause = "WHERE e.logTime >= ?"
+            arguments = [start]
+        } else if let end = endDate {
+            whereClause = "WHERE e.logTime <= ?"
+            arguments = [end]
+        }
+
+        return try await database.read { db in
+            let sql = """
+                SELECT
+                    m.id as milestoneId,
+                    m.expectationId,
+                    m.targetDate,
+                    e.id as expectationId,
+                    e.title,
+                    e.detailedDescription,
+                    e.freeformNotes,
+                    e.logTime,
+                    e.expectationType,
+                    e.expectationImportance,
+                    e.expectationUrgency
+                FROM milestones m
+                INNER JOIN expectations e ON m.expectationId = e.id
+                \(whereClause)
+                ORDER BY m.targetDate ASC
+                """
+
+            let rows = try MilestoneQueryRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            return rows.map { assembleMilestoneWithDetails(from: $0) }
+        }
+    }
+
+    // MARK: - Status-Based Queries
+
+    /// Fetch milestones by calculated status
+    ///
+    /// **Implementation**: Uses CASE statement to calculate status, then filter
+    /// **Status Calculation**: Based on targetDate proximity to current date
+    /// - upcoming: targetDate > now + 7 days
+    /// - due: targetDate between now and now + 7 days
+    /// - overdue: targetDate < now
+    ///
+    /// **Use Case**: Dashboard showing "due this week" or "overdue" milestones
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// SELECT ... FROM milestones m JOIN expectations e
+    /// WHERE (status = 'upcoming' AND targetDate > date('now', '+7 days'))
+    ///    OR (status = 'due' AND targetDate >= date('now') AND targetDate <= date('now', '+7 days'))
+    ///    OR (status = 'overdue' AND targetDate < date('now'))
+    /// ```
+    public func fetchByStatus(_ status: MilestoneStatus) async throws -> [MilestoneWithDetails] {
+        try await database.read { db in
+            // Build WHERE clause based on status
+            let whereClause: String
+            switch status {
+            case .upcoming:
+                whereClause = "WHERE m.targetDate > date('now', '+7 days')"
+            case .due:
+                whereClause = "WHERE m.targetDate >= date('now') AND m.targetDate <= date('now', '+7 days')"
+            case .overdue:
+                whereClause = "WHERE m.targetDate < date('now')"
+            case .completed:
+                // Completed status would require a separate completion tracking field
+                // For now, return empty array (milestones don't have completion tracking yet)
+                return []
+            }
+
+            let sql = """
+                SELECT
+                    m.id as milestoneId,
+                    m.expectationId,
+                    m.targetDate,
+                    e.id as expectationId,
+                    e.title,
+                    e.detailedDescription,
+                    e.freeformNotes,
+                    e.logTime,
+                    e.expectationType,
+                    e.expectationImportance,
+                    e.expectationUrgency
+                FROM milestones m
+                INNER JOIN expectations e ON m.expectationId = e.id
+                \(whereClause)
+                ORDER BY m.targetDate ASC
+                """
+
+            let rows = try MilestoneQueryRow.fetchAll(db, sql: sql)
+            return rows.map { assembleMilestoneWithDetails(from: $0) }
+        }
+    }
+
+    /// Fetch upcoming milestones within specified days
+    ///
+    /// **Implementation**: Filter to targetDate within N days from now
+    /// **Default**: 30 days (next month)
+    /// **Use Case**: "Upcoming milestones" dashboard widget
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// WHERE targetDate BETWEEN date('now') AND date('now', '+N days')
+    /// ORDER BY targetDate ASC
+    /// ```
+    public func fetchUpcoming(days: Int = 30) async throws -> [MilestoneWithDetails] {
+        try await database.read { db in
+            let sql = """
+                SELECT
+                    m.id as milestoneId,
+                    m.expectationId,
+                    m.targetDate,
+                    e.id as expectationId,
+                    e.title,
+                    e.detailedDescription,
+                    e.freeformNotes,
+                    e.logTime,
+                    e.expectationType,
+                    e.expectationImportance,
+                    e.expectationUrgency
+                FROM milestones m
+                INNER JOIN expectations e ON m.expectationId = e.id
+                WHERE m.targetDate BETWEEN date('now') AND date('now', '+\(days) days')
+                ORDER BY m.targetDate ASC
+                """
+
+            let rows = try MilestoneQueryRow.fetchAll(db, sql: sql)
+            return rows.map { assembleMilestoneWithDetails(from: $0) }
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Assemble MilestoneWithDetails from query row

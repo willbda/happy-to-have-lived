@@ -119,6 +119,157 @@ public final class ObligationRepository: Sendable {
         }
     }
 
+    /// Fetch obligations filtered by date range for export
+    ///
+    /// **Implementation**: Same as fetchAll() + WHERE e.logTime BETWEEN ? AND ?
+    /// **Date Filter**: Uses expectation.logTime (when obligation was created)
+    /// **Pattern**: Matches GoalRepository.fetchForExport() for consistency
+    public func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [ObligationWithDetails] {
+        // Build WHERE clause
+        var whereClause = ""
+        var arguments: [DatabaseValueConvertible] = []
+
+        if let start = startDate, let end = endDate {
+            whereClause = "WHERE e.logTime BETWEEN ? AND ?"
+            arguments = [start, end]
+        } else if let start = startDate {
+            whereClause = "WHERE e.logTime >= ?"
+            arguments = [start]
+        } else if let end = endDate {
+            whereClause = "WHERE e.logTime <= ?"
+            arguments = [end]
+        }
+
+        return try await database.read { db in
+            let sql = """
+                SELECT
+                    o.id as obligationId,
+                    o.expectationId,
+                    o.deadline,
+                    o.requestedBy,
+                    o.consequence,
+                    e.id as expectationId,
+                    e.title,
+                    e.detailedDescription,
+                    e.freeformNotes,
+                    e.logTime,
+                    e.expectationType,
+                    e.expectationImportance,
+                    e.expectationUrgency
+                FROM obligations o
+                INNER JOIN expectations e ON o.expectationId = e.id
+                \(whereClause)
+                ORDER BY o.deadline ASC
+                """
+
+            let rows = try ObligationQueryRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            return rows.map { assembleObligationWithDetails(from: $0) }
+        }
+    }
+
+    // MARK: - Status-Based Queries
+
+    /// Fetch obligations by calculated status
+    ///
+    /// **Implementation**: Uses CASE statement to calculate status, then filter
+    /// **Status Calculation**: Based on deadline proximity to current date
+    /// - pending: deadline > now + 7 days
+    /// - approaching: deadline between now and now + 7 days
+    /// - overdue: deadline < now
+    ///
+    /// **Use Case**: Dashboard showing "approaching deadlines" or "overdue" obligations
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// SELECT ... FROM obligations o JOIN expectations e
+    /// WHERE (status = 'pending' AND deadline > date('now', '+7 days'))
+    ///    OR (status = 'approaching' AND deadline >= date('now') AND deadline <= date('now', '+7 days'))
+    ///    OR (status = 'overdue' AND deadline < date('now'))
+    /// ```
+    public func fetchByStatus(_ status: ObligationStatus) async throws -> [ObligationWithDetails] {
+        try await database.read { db in
+            // Build WHERE clause based on status
+            let whereClause: String
+            switch status {
+            case .pending:
+                whereClause = "WHERE o.deadline > date('now', '+7 days')"
+            case .approaching:
+                whereClause = "WHERE o.deadline >= date('now') AND o.deadline <= date('now', '+7 days')"
+            case .overdue:
+                whereClause = "WHERE o.deadline < date('now')"
+            case .completed:
+                // Completed status would require a separate completion tracking field
+                // For now, return empty array (obligations don't have completion tracking yet)
+                return []
+            }
+
+            let sql = """
+                SELECT
+                    o.id as obligationId,
+                    o.expectationId,
+                    o.deadline,
+                    o.requestedBy,
+                    o.consequence,
+                    e.id as expectationId,
+                    e.title,
+                    e.detailedDescription,
+                    e.freeformNotes,
+                    e.logTime,
+                    e.expectationType,
+                    e.expectationImportance,
+                    e.expectationUrgency
+                FROM obligations o
+                INNER JOIN expectations e ON o.expectationId = e.id
+                \(whereClause)
+                ORDER BY o.deadline ASC
+                """
+
+            let rows = try ObligationQueryRow.fetchAll(db, sql: sql)
+            return rows.map { assembleObligationWithDetails(from: $0) }
+        }
+    }
+
+    /// Fetch obligations by minimum urgency level
+    ///
+    /// **Implementation**: Filter to expectationUrgency >= threshold
+    /// **Use Case**: "High urgency obligations" dashboard filter
+    /// **Default**: No default (caller must specify threshold)
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// WHERE e.expectationUrgency >= ?
+    /// ORDER BY e.expectationUrgency DESC, o.deadline ASC
+    /// ```
+    ///
+    /// **Example**: fetchByUrgency(8) returns obligations with urgency >= 8
+    public func fetchByUrgency(minimumUrgency: Int) async throws -> [ObligationWithDetails] {
+        try await database.read { db in
+            let sql = """
+                SELECT
+                    o.id as obligationId,
+                    o.expectationId,
+                    o.deadline,
+                    o.requestedBy,
+                    o.consequence,
+                    e.id as expectationId,
+                    e.title,
+                    e.detailedDescription,
+                    e.freeformNotes,
+                    e.logTime,
+                    e.expectationType,
+                    e.expectationImportance,
+                    e.expectationUrgency
+                FROM obligations o
+                INNER JOIN expectations e ON o.expectationId = e.id
+                WHERE e.expectationUrgency >= ?
+                ORDER BY e.expectationUrgency DESC, o.deadline ASC
+                """
+
+            let rows = try ObligationQueryRow.fetchAll(db, sql: sql, arguments: [minimumUrgency])
+            return rows.map { assembleObligationWithDetails(from: $0) }
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Assemble ObligationWithDetails from query row

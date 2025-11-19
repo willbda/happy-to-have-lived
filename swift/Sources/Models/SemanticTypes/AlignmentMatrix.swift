@@ -20,7 +20,6 @@
 // ```
 
 import Foundation
-import Models
 import SwiftUI
 
 /// Structured container for goal-value alignment heatmap

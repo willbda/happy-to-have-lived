@@ -157,7 +157,7 @@ public final class MeasureCoordinator: Sendable {
     /// For updates, use `.upsert` with existing ID (see update() method).
     public func create(from formData: MeasureFormData) async throws -> Measure {
         // Phase 1: Validate form data (business rules)
-        try validateFormData(formData)
+        try MeasureValidation.validateFormData(formData)
 
         // Check for duplicates (compound key: unit + measureType)
         let repository = MeasureRepository(database: database)
@@ -187,7 +187,7 @@ public final class MeasureCoordinator: Sendable {
         }
 
         // Phase 2: Validate complete entity (defensive check)
-        try validateComplete(createdMeasure)
+        try MeasureValidation.validateComplete(createdMeasure)
 
         // Phase 3: Generate embeddings asynchronously (fire-and-forget, don't block return)
         // Fire task AFTER database.write completes to avoid blocking measure creation
@@ -267,7 +267,7 @@ public final class MeasureCoordinator: Sendable {
         from formData: MeasureFormData
     ) async throws -> Measure {
         // Phase 1: Validate form data (business rules)
-        try validateFormData(formData)
+        try MeasureValidation.validateFormData(formData)
 
         // Check for duplicates (excluding current measure)
         let repository = MeasureRepository(database: database)
@@ -307,7 +307,7 @@ public final class MeasureCoordinator: Sendable {
         }
 
         // Phase 2: Validate complete entity (defensive check)
-        try validateComplete(updatedMeasure)
+        try MeasureValidation.validateComplete(updatedMeasure)
 
         return updatedMeasure
     }
@@ -328,81 +328,6 @@ public final class MeasureCoordinator: Sendable {
                 sql: "DELETE FROM measures WHERE id = ?",
                 arguments: [measureData.id.uuidString.lowercased()]
             )
-        }
-    }
-
-    // MARK: - Private Validation
-
-    /// Phase 1: Validate form data (business rules)
-    ///
-    /// **Requirements**:
-    /// - title: Non-empty string
-    /// - unit: Non-empty string
-    /// - measureType: Non-empty string
-    /// - conversionFactor: If canonicalUnit set, conversionFactor must be > 0
-    ///
-    /// - Throws: ValidationError.emptyField if required fields missing
-    ///           ValidationError.invalidInput if conversion logic inconsistent
-    private func validateFormData(_ formData: MeasureFormData) throws {
-        // Title required
-        guard !formData.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ValidationError.missingRequiredField("Measure title is required")
-        }
-
-        // Unit required
-        guard !formData.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ValidationError.missingRequiredField("Measure unit is required")
-        }
-
-        // MeasureType required
-        guard !formData.measureType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ValidationError.missingRequiredField("Measure type is required")
-        }
-
-        // Conversion logic consistency
-        if let canonicalUnit = formData.canonicalUnit {
-            guard let conversionFactor = formData.conversionFactor, conversionFactor > 0 else {
-                throw ValidationError.databaseConstraint(
-                    "Conversion factor must be > 0 when canonical unit is specified"
-                )
-            }
-        }
-    }
-
-    /// Phase 2: Validate complete entity (defensive check)
-    ///
-    /// **Requirements**:
-    /// - Same as Phase 1 (title, unit, measureType non-empty)
-    /// - Conversion factor > 0 if canonical unit set
-    ///
-    /// This should never fail if Phase 1 passed and model init is correct.
-    ///
-    /// - Throws: ValidationError if entity is invalid
-    private func validateComplete(_ measure: Measure) throws {
-        // Title required
-        guard let title = measure.title,
-            !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-            throw ValidationError.missingRequiredField("Measure title is required")
-        }
-
-        // Unit required
-        guard !measure.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ValidationError.missingRequiredField("Measure unit is required")
-        }
-
-        // MeasureType required
-        guard !measure.measureType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ValidationError.missingRequiredField("Measure type is required")
-        }
-
-        // Conversion logic consistency
-        if let canonicalUnit = measure.canonicalUnit, !canonicalUnit.isEmpty {
-            guard let conversionFactor = measure.conversionFactor, conversionFactor > 0 else {
-                throw ValidationError.databaseConstraint(
-                    "Conversion factor must be > 0 when canonical unit is specified"
-                )
-            }
         }
     }
 }

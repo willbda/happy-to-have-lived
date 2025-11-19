@@ -184,10 +184,10 @@ public final class TimePeriodCoordinator: Sendable {
     /// - Throws: DatabaseError if deletion fails (e.g., FK constraint violation)
     public func delete(_ timePeriodData: TimePeriodData) async throws {
         try await database.write { db in
-            // 1. Delete GoalTerm by ID (has FK to TimePeriod)
+            // 1. Delete GoalTerm by timePeriodId FK (has FK to TimePeriod)
             try db.execute(
-                sql: "DELETE FROM goalTerms WHERE id = ?",
-                arguments: [timePeriodData.id.uuidString.lowercased()]
+                sql: "DELETE FROM goalTerms WHERE timePeriodId = ?",
+                arguments: [timePeriodData.timePeriodId.uuidString.lowercased()]
             )
 
             // 2. Delete TimePeriod by ID

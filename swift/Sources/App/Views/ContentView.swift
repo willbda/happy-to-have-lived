@@ -57,7 +57,23 @@
 
               }
 
-              // Tab 5: Values (Phase 3 - Complete)
+              // Tab 5: Milestones (Phase 2 - Complete)
+              NavigationStack {
+                  MilestonesListView()
+              }
+              .tabItem {
+                  Label("Milestones", systemImage: "flag")
+              }
+
+              // Tab 6: Obligations (Phase 2 - Complete)
+              NavigationStack {
+                  ObligationsListView()
+              }
+              .tabItem {
+                  Label("Obligations", systemImage: "checkmark.circle")
+              }
+
+              // Tab 7: Values (Phase 3 - Complete)
               NavigationStack {
                   PersonalValuesListView()
               }
@@ -65,7 +81,7 @@
                   Label("Values", systemImage: "heart.fill")
               }
 
-              // Tab 6: Import (CSV Import/Export)
+              // Tab 8: Import (CSV Import/Export)
               NavigationStack {
                   CSVExportImportView()
               }
@@ -73,7 +89,7 @@
                   Label("Import", systemImage: "arrow.2.circlepath.circle")
               }
 
-              // Tab 7: Health (iOS only - HealthKit workouts)
+              // Tab 9: Health (iOS only - HealthKit workouts)
               #if os(iOS)
               NavigationStack {
                   WorkoutsTestView()
@@ -83,7 +99,7 @@
               }
               #endif
 
-              // Tab 8: Debug Tools
+              // Tab 10: Debug Tools
               NavigationStack {
                   List {
                       Section("Data Cleanup") {

@@ -79,7 +79,7 @@ public struct ObligationFormView: View {
             }
         }
         .navigationTitle("New Obligation")
-        .navigationBarTitleDisplayMode(.inline)
+    
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {

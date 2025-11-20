@@ -68,7 +68,7 @@ public struct MilestoneFormView: View {
             }
         }
         .navigationTitle("New Milestone")
-        .navigationBarTitleDisplayMode(.inline)
+
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {

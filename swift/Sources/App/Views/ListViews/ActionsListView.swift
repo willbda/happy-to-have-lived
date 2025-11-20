@@ -168,13 +168,10 @@ public struct ActionsListView: View {
                     showingAddAction = true
                 }
             )
-            .listRowBackground(Color.clear)
 
             // Actions List
             ForEach(viewModel.actions) { actionData in
                 ActionRowView(action: actionData)
-                    .listRowBackground(Color.clear)  // Transparent to show background
-                    .contentShape(Rectangle())  // Make entire row tappable
                     .onTapGesture {
                         edit(actionData)
                     }
@@ -212,7 +209,11 @@ public struct ActionsListView: View {
                     .tag(actionData)
             }
         }
-        .scrollContentBackground(.hidden)  // Hide default list background
+        #if os(iOS)
+        .listStyle(.insetGrouped)  // iOS: Inset grouped style with Liquid Glass
+        #else
+        .listStyle(.inset)  // macOS: Inset style (native macOS appearance)
+        #endif
         #if os(macOS)
         .onDeleteCommand {
             if let selected = selectedAction {

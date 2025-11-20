@@ -142,8 +142,6 @@ public struct PersonalValuesListView: View {
                     Section(level.displayName) {
                         ForEach(levelValues) { valueData in
                             PersonalValuesRowView(value: valueData)
-                                .listRowBackground(Color.clear)  // Transparent to show background
-                                .contentShape(Rectangle())  // Make entire row tappable
                                 .onTapGesture {
                                     edit(valueData)
                                 }
@@ -184,7 +182,11 @@ public struct PersonalValuesListView: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)  // Hide default list background
+        #if os(iOS)
+        .listStyle(.insetGrouped)  // iOS: Inset grouped style with Liquid Glass
+        #else
+        .listStyle(.inset)  // macOS: Inset style (native macOS appearance)
+        #endif
         #if os(macOS)
         .onDeleteCommand {
             if let selected = selectedValue {

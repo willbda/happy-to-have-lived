@@ -153,8 +153,6 @@ public struct GoalsListView: View {
         List(selection: $selectedGoal) {
             ForEach(viewModel.goals) { goalData in
                 GoalRowView(goal: goalData)
-                    .listRowBackground(Color.clear)  // Transparent to show background
-                    .contentShape(Rectangle())  // Make entire row tappable
                     .onTapGesture {
                         edit(goalData)
                     }
@@ -192,7 +190,11 @@ public struct GoalsListView: View {
                     .tag(goalData)
             }
         }
-        .scrollContentBackground(.hidden)  // Hide default list background
+        #if os(iOS)
+        .listStyle(.insetGrouped)  // iOS: Inset grouped style with Liquid Glass
+        #else
+        .listStyle(.inset)  // macOS: Inset style (native macOS appearance)
+        #endif
         #if os(macOS)
         .onDeleteCommand {
             if let selected = selectedGoal {

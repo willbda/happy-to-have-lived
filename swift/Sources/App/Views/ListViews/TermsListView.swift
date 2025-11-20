@@ -130,8 +130,6 @@ public struct TermsListView: View {
         List(selection: $selectedTerm) {
             ForEach(viewModel.terms) { termData in
                 TermRowView(timePeriod: termData)
-                    .listRowBackground(Color.clear)  // Transparent to show background
-                    .contentShape(Rectangle())  // Make entire row tappable
                     .onTapGesture {
                         edit(termData)
                     }
@@ -169,7 +167,11 @@ public struct TermsListView: View {
                     .tag(termData)
             }
         }
-        .scrollContentBackground(.hidden)  // Hide default list background
+        #if os(iOS)
+        .listStyle(.insetGrouped)  // iOS: Inset grouped style with Liquid Glass
+        #else
+        .listStyle(.inset)  // macOS: Inset style (native macOS appearance)
+        #endif
         #if os(macOS)
         .onDeleteCommand {
             if let selected = selectedTerm {

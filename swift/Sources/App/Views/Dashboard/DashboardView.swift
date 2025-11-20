@@ -129,10 +129,10 @@ private struct ValueAlignmentSummaryCard: View {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding()
-            } else if let matrix = viewModel.alignmentMatrix {
-                summaryContent(matrix: matrix)
             } else if viewModel.hasError {
                 errorContent
+            } else if let matrix = viewModel.alignmentMatrix {
+                summaryContent(matrix: matrix)
             } else {
                 emptyContent
             }

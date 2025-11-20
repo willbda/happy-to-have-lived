@@ -49,7 +49,7 @@ public struct PersonalValuesListView: View {
                 valuesList
             }
         }
-        .background(BackgroundView(.values))  // MoodyLake for reflection and depth
+        .background(.regularMaterial)  // System material with automatic Liquid Glass
         .navigationTitle("Values")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

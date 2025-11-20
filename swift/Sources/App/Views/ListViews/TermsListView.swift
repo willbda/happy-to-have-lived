@@ -45,7 +45,7 @@ public struct TermsListView: View {
                 termsList
             }
         }
-        .background(BackgroundView(.terms))  // Outlook for perspective and planning
+        .background(.regularMaterial)  // System material with automatic Liquid Glass
         .navigationTitle("Terms")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

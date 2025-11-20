@@ -48,7 +48,7 @@ public struct GoalsListView: View {
                 goalsList
             }
         }
-        .background(BackgroundView(.goals))  // Mountain background for aspiration
+        .background(.regularMaterial)  // System material with automatic Liquid Glass
         .navigationTitle("Goals")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

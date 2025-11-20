@@ -55,7 +55,7 @@ public struct ActionsListView: View {
                 actionsList
             }
         }
-        .background(BackgroundView(.actions))  // MoodyRiver for flow and progress
+        .background(.regularMaterial)  // System material with automatic Liquid Glass
         .navigationTitle("Actions")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

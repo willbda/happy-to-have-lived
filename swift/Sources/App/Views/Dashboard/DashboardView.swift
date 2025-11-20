@@ -35,7 +35,7 @@ public struct DashboardView: View {
                 }
                 .padding()
             }
-            .background(BackgroundView(.dashboard))  // MoodyMist for emerging clarity
+            .background(.regularMaterial)  // System material with automatic Liquid Glass
             .navigationTitle("Dashboard")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)

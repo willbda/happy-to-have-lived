@@ -150,10 +150,11 @@ struct SyncDebugView: View {
         lastSyncMessage = nil
 
         do {
-            // Use SyncEngine's fetchChanges() method directly
-            // This explicitly tells CKSyncEngine to download pending changes
-            try await syncEngine.fetchChanges()
-            lastSyncMessage = "✅ Fetch complete"
+            // TODO: SyncEngine API change - fetchChanges() method not available
+            // The manual fetch functionality is temporarily disabled until we determine
+            // the correct API for triggering a CloudKit sync fetch
+            // try await syncEngine.fetchChanges()
+            lastSyncMessage = "⚠️ Manual fetch not available (API change)"
             await loadMetadataStats()
         } catch {
             lastSyncMessage = "❌ Fetch failed: \(error.localizedDescription)"

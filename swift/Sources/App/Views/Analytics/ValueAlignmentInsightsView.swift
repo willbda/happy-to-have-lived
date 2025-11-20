@@ -42,6 +42,13 @@ public struct ValueAlignmentInsightsView: View {
                         Task { await viewModel.loadMatrix() }
                     }
                 }
+            } else {
+                // Empty state (no data loaded yet)
+                ContentUnavailableView {
+                    Label("No Data", systemImage: "chart.bar.xaxis")
+                } description: {
+                    Text("Add goals and values to see alignment insights")
+                }
             }
         }
         .navigationTitle("Value Alignment")

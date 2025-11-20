@@ -2,10 +2,11 @@
 // ActionsListView.swift
 // Written by Claude Code on 2025-11-02
 // Refactored on 2025-11-13 to use ViewModel pattern
+// Refactored on 2025-11-19 for HIG compliance and consistency
 //
 // PURPOSE: List view for Actions with measurements and goal contributions
 // DATA SOURCE: ActionsListViewModel (replaces @Fetch pattern)
-// INTERACTIONS: Tap to edit, swipe to delete, pull to refresh
+// INTERACTIONS: Tap to edit, swipe to delete, pull to refresh, context menu
 //
 
 import SwiftUI
@@ -17,14 +18,13 @@ import Services
 /// **PATTERN**: ViewModel-based (migrated from @Fetch)
 /// **DATA**: ActionsListViewModel → ActionRepository + GoalRepository → Database
 /// **DISPLAY**: ActionRowView for each action + QuickAddSection
-/// **INTERACTIONS**: Tap to edit, swipe to delete, pull to refresh
+/// **INTERACTIONS**: Tap to edit, swipe to delete, pull to refresh, context menu
 ///
-/// **MIGRATION NOTE** (2025-11-13):
-/// Previously used @Fetch(ActionsWithMeasuresAndGoals()) which wrapped repository calls.
-/// Now uses ActionsListViewModel directly for:
-/// - Better separation of concerns
-/// - Explicit async/await patterns
-/// - Easier testing and error handling
+/// **HIG COMPLIANCE** (2025-11-19):
+/// - Consistent feedback: Reload after create/edit/delete
+/// - Platform support: macOS keyboard shortcuts and delete command
+/// - Proper alert presentation with explicit bindings
+/// - Context menu for desktop interaction patterns
 public struct ActionsListView: View {
     // MARK: - State
 
@@ -33,13 +33,14 @@ public struct ActionsListView: View {
     @State private var showingAddAction = false
     @State private var actionToEdit: Models.ActionData?
     @State private var actionToDelete: Models.ActionData?
-    @State private var showingDeleteAlert = false
     @State private var selectedAction: Models.ActionData?
     @State private var formData: ActionFormData?  // For Quick Add pre-filling
 
-    // MARK: - Body
+    // MARK: - Initialization
 
     public init() {}
+
+    // MARK: - Body
 
     public var body: some View {
         Group {
@@ -47,11 +48,14 @@ public struct ActionsListView: View {
                 // Loading state
                 ProgressView("Loading actions...")
             } else if viewModel.actions.isEmpty {
+                // Empty state
                 emptyState
             } else {
+                // Actions list
                 actionsList
             }
         }
+        .background(BackgroundView(.actions))  // MoodyRiver for flow and progress
         .navigationTitle("Actions")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -100,7 +104,7 @@ public struct ActionsListView: View {
             }
         }
         .onChange(of: actionToEdit) { oldValue, newValue in
-            // Refresh list when edit sheet is dismissed
+            // Reload list when edit sheet is dismissed
             if newValue == nil && oldValue != nil {
                 Task {
                     await viewModel.loadActions()
@@ -110,7 +114,7 @@ public struct ActionsListView: View {
         }
         .alert(
             "Delete Action",
-            isPresented: $showingDeleteAlert,
+            isPresented: .constant(actionToDelete != nil),
             presenting: actionToDelete
         ) { actionData in
             Button("Cancel", role: .cancel) {
@@ -164,22 +168,24 @@ public struct ActionsListView: View {
                     showingAddAction = true
                 }
             )
+            .listRowBackground(Color.clear)
 
             // Actions List
             ForEach(viewModel.actions) { actionData in
                 ActionRowView(action: actionData)
+                    .listRowBackground(Color.clear)  // Transparent to show background
+                    .contentShape(Rectangle())  // Make entire row tappable
                     .onTapGesture {
                         edit(actionData)
                     }
-                    .swipeActions(edge: .trailing) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
                             actionToDelete = actionData
-                            showingDeleteAlert = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
                     }
-                    .swipeActions(edge: .leading) {
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
                         Button {
                             edit(actionData)
                         } label: {
@@ -199,7 +205,6 @@ public struct ActionsListView: View {
 
                         Button(role: .destructive) {
                             actionToDelete = actionData
-                            showingDeleteAlert = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -207,11 +212,11 @@ public struct ActionsListView: View {
                     .tag(actionData)
             }
         }
+        .scrollContentBackground(.hidden)  // Hide default list background
         #if os(macOS)
         .onDeleteCommand {
             if let selected = selectedAction {
                 actionToDelete = selected
-                showingDeleteAlert = true
             }
         }
         #endif

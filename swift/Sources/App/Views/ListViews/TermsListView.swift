@@ -2,37 +2,35 @@
 // TermsListView.swift
 // Written by Claude Code on 2025-11-02
 // Refactored on 2025-11-13 to use ViewModel pattern
+// Refactored on 2025-11-19 for HIG compliance and consistency
 //
 // PURPOSE: List view showing Terms with their TimePeriod details
 // DATA SOURCE: TermsListViewModel (replaces @Fetch pattern)
-// INTERACTIONS: Tap to edit, swipe to delete, empty state
-//
-// MIGRATION NOTE (2025-11-13):
-// Previously used @Fetch(TermsWithPeriods()) with manual refresh trigger hack.
-// Now uses TermsListViewModel directly for:
-// - Better separation of concerns
-// - Explicit async/await patterns
-// - Easier testing and error handling
-// - Consistent pattern with GoalsListView, ActionsListView, PersonalValuesListView
-// - Eliminates refresh trigger hack (automatic reactivity via @Observable)
+// INTERACTIONS: Tap to edit, swipe to delete, empty state, context menu
 //
 
 import Models
 import SwiftUI
 
+/// List view for terms (10-week planning periods)
+///
+/// **PATTERN**: ViewModel-based (migrated from @Fetch)
+/// **DATA**: TermsListViewModel → TimePeriodRepository → Database
+/// **DISPLAY**: TermRowView for each term
+/// **INTERACTIONS**: Tap to edit, swipe to delete, pull to refresh, context menu
+///
+/// **HIG COMPLIANCE** (2025-11-19):
+/// - Consistent feedback: Reload after create/edit/delete
+/// - Platform support: macOS keyboard shortcuts and delete command
+/// - Proper alert presentation with explicit bindings
+/// - Context menu for desktop interaction patterns
 public struct TermsListView: View {
     @State private var viewModel = TermsListViewModel()
 
     @State private var showingForm = false
-
-    /// Term being edited (nil = create mode)
-    @State private var termToEdit: TimePeriodData?
-
-    /// Selected term for keyboard navigation
-    @State private var selectedTerm: TimePeriodData?
-
-    /// Term to delete (for confirmation)
-    @State private var termToDelete: TimePeriodData?
+    @State private var termToEdit: TimePeriodData?  // nil = create mode
+    @State private var selectedTerm: TimePeriodData?  // For keyboard navigation
+    @State private var termToDelete: TimePeriodData?  // For confirmation
 
     public var body: some View {
         Group {
@@ -41,73 +39,13 @@ public struct TermsListView: View {
                 ProgressView("Loading terms...")
             } else if viewModel.terms.isEmpty {
                 // Empty state
-                ContentUnavailableView {
-                    Label("No Terms Yet", systemImage: "calendar")
-                } description: {
-                    Text("Organize your goals by creating your first 10-week term")
-                } actions: {
-                    Button("Add Term") {
-                        termToEdit = nil
-                        showingForm = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
+                emptyState
             } else {
-                List(selection: $selectedTerm) {
-                    ForEach(viewModel.terms) { termData in
-                        TermRowView(timePeriod: termData)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                // Tap row → edit
-                                termToEdit = termData
-                                showingForm = true
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    termToDelete = termData
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                Button {
-                                    // Swipe left → edit
-                                    termToEdit = termData
-                                    showingForm = true
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                                .tint(.blue)
-                            }
-                            // Context menu for mouse/trackpad users
-                            .contextMenu {
-                                Button {
-                                    termToEdit = termData
-                                    showingForm = true
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-
-                                Divider()
-
-                                Button(role: .destructive) {
-                                    termToDelete = termData
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            .tag(termData)
-                    }
-                }
-                #if os(macOS)
-                .onDeleteCommand {
-                    if let selected = selectedTerm {
-                        termToDelete = selected
-                    }
-                }
-                #endif
+                // Terms list
+                termsList
             }
         }
+        .background(BackgroundView(.terms))  // Outlook for perspective and planning
         .navigationTitle("Terms")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -168,6 +106,84 @@ public struct TermsListView: View {
         } message: {
             Text(viewModel.errorMessage ?? "Unknown error")
         }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No Terms Yet", systemImage: "calendar")
+        } description: {
+            Text("Organize your goals by creating your first 10-week term")
+        } actions: {
+            Button("Add Term") {
+                termToEdit = nil
+                showingForm = true
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    // MARK: - Terms List
+
+    private var termsList: some View {
+        List(selection: $selectedTerm) {
+            ForEach(viewModel.terms) { termData in
+                TermRowView(timePeriod: termData)
+                    .listRowBackground(Color.clear)  // Transparent to show background
+                    .contentShape(Rectangle())  // Make entire row tappable
+                    .onTapGesture {
+                        edit(termData)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            termToDelete = termData
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button {
+                            edit(termData)
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
+                    // Context menu for mouse/trackpad users
+                    .contextMenu {
+                        Button {
+                            edit(termData)
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            termToDelete = termData
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .tag(termData)
+            }
+        }
+        .scrollContentBackground(.hidden)  // Hide default list background
+        #if os(macOS)
+        .onDeleteCommand {
+            if let selected = selectedTerm {
+                termToDelete = selected
+            }
+        }
+        #endif
+    }
+
+    // MARK: - Actions
+
+    private func edit(_ termData: TimePeriodData) {
+        termToEdit = termData
+        showingForm = true
     }
 }
 

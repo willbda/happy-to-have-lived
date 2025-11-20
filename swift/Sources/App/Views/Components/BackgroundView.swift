@@ -64,19 +64,19 @@ public struct BackgroundView: View {
 
 /// Background style based on context
 public enum BackgroundStyle {
-    case goals      // Mountain - aspirational, journey ahead
-    case actions    // MoodyRiver - flow, progress, movement
-    case values     // MoodyLake - reflection, depth, stillness
-    case terms      // Outlook - perspective, planning, horizon
-    case dashboard  // MoodyMist - overview, clarity emerging
+    case goals      // Mountains4 - aspirational peaks, journey ahead
+    case actions    // Forest - growth, movement through nature
+    case values     // Moody - introspective depth, stillness
+    case terms      // BigLakeMountains - perspective, planning horizon
+    case dashboard  // Aurora3 - inspiring clarity, overview
 
     var imageName: String {
         switch self {
-        case .goals:     return "Mountain"
-        case .actions:   return "MoodyRiver"
-        case .values:    return "MoodyLake"
-        case .terms:     return "Outlook"
-        case .dashboard: return "MoodyMist"
+        case .goals:     return "Mountains4"
+        case .actions:   return "Forest"
+        case .values:    return "Moody"
+        case .terms:     return "BigLakeMountains"
+        case .dashboard: return "Aurora3"
         }
     }
 
@@ -85,11 +85,11 @@ public enum BackgroundStyle {
     /// Lower opacity = more image visible, higher = more subdued
     var dimmingOpacity: Double {
         switch self {
-        case .goals:     return 0.50  // Mountain can be dramatic, need more dimming
-        case .actions:   return 0.45  // River has movement, moderate dimming
-        case .values:    return 0.40  // Lake is calmer, less dimming needed
-        case .terms:     return 0.45  // Outlook needs balance
-        case .dashboard: return 0.50  // Mist is subtle but needs clarity
+        case .goals:     return 0.50  // Mountains can be dramatic, need more dimming
+        case .actions:   return 0.40  // Forest has natural depth, moderate dimming
+        case .values:    return 0.35  // Moody is already subdued, less dimming needed
+        case .terms:     return 0.45  // Lake and mountains need balance
+        case .dashboard: return 0.50  // Aurora is bright and colorful, needs dimming
         }
     }
 }

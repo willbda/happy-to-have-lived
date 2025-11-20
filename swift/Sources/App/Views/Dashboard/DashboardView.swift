@@ -12,6 +12,7 @@ import Models
 
 @available(iOS 26.0, macOS 26.0, *)
 public struct DashboardView: View {
+    @State private var viewModel = DashboardViewModel()
 
     public init() {}
 
@@ -22,7 +23,18 @@ public struct DashboardView: View {
                     // Welcome Header
                     welcomeSection
 
-                    // Value Alignment Summary Card (primary insight)
+                    if viewModel.isLoading {
+                        ProgressView("Loading dashboard...")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    } else if viewModel.hasError {
+                        errorView
+                    } else {
+                        // New Dashboard Cards (in priority order)
+                        dashboardCards
+                    }
+
+                    // Value Alignment Summary Card
                     NavigationLink {
                         ValueAlignmentInsightsView()
                     } label: {
@@ -40,7 +52,91 @@ public struct DashboardView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             #endif
+            .task {
+                await viewModel.loadDashboard()
+            }
+            .refreshable {
+                await viewModel.reloadDashboard()
+            }
         }
+    }
+
+    // MARK: - Dashboard Cards
+
+    @ViewBuilder
+    private var dashboardCards: some View {
+        VStack(spacing: 20) {
+            // 1. Active Term Card
+            ActiveTermCard(
+                term: viewModel.currentTerm,
+                progress: viewModel.termProgress(),
+                daysRemaining: viewModel.daysRemainingInTerm()
+            )
+
+            // 2. Active Goals Card (top 5)
+            NavigationLink {
+                GoalsListView()
+            } label: {
+                ActiveGoalsCard(goals: viewModel.activeGoals)
+            }
+            .buttonStyle(.plain)
+
+            // 3. Recent Actions Card (with goal contribution chips!)
+            NavigationLink {
+                ActionsListView()
+            } label: {
+                RecentActionsCard(actions: viewModel.recentActions)
+            }
+            .buttonStyle(.plain)
+
+            // 4. Upcoming Milestones (next 7 days)
+            if !viewModel.upcomingMilestones.isEmpty {
+                UpcomingMilestonesCard(
+                    milestones: viewModel.upcomingMilestones,
+                    daysUntilCalculator: { viewModel.daysUntil(milestone: $0) }
+                )
+            }
+
+            // 5. Approaching Obligations (approaching + overdue)
+            if !viewModel.approachingObligations.isEmpty {
+                ApproachingObligationsCard(
+                    obligations: viewModel.approachingObligations,
+                    daysUntilCalculator: { viewModel.daysUntil(obligation: $0) },
+                    isOverdueCheck: { viewModel.isOverdue(obligation: $0) }
+                )
+            }
+        }
+    }
+
+    // MARK: - Error View
+
+    @ViewBuilder
+    private var errorView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title)
+                .foregroundStyle(.orange)
+
+            Text("Failed to load dashboard")
+                .font(.headline)
+
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button("Try Again") {
+                Task {
+                    await viewModel.reloadDashboard()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Welcome Section

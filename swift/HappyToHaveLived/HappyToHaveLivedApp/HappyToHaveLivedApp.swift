@@ -48,6 +48,23 @@ struct HappyToHaveLivedApp: App {
     ///
     /// When the app starts, SyncEngine is started in DatabaseBootstrap, but the actual
     /// CKSyncEngine fetch begins asynchronously. We need to wait for it to start AND complete.
+    ///
+    /// **Current Implementation**: Polling pattern (100ms intervals)
+    /// **Future Enhancement**: TODO - Replace with AsyncStream when SyncEngine supports it
+    ///
+    /// The polling approach works but is not ideal:
+    /// - Wastes CPU cycles checking status repeatedly
+    /// - Fixed delay may be too short or too long
+    /// - AsyncStream would provide push-based notifications
+    ///
+    /// Ideal future API:
+    /// ```swift
+    /// for await status in syncEngine.statusUpdates {
+    ///     if case .synchronized = status {
+    ///         break
+    ///     }
+    /// }
+    /// ```
     private func performInitialSyncIfNeeded() async {
         @Dependency(\.defaultDatabase) var database
         @Dependency(\.defaultSyncEngine) var syncEngine
@@ -65,6 +82,8 @@ struct HappyToHaveLivedApp: App {
         print("📥 Fresh install detected - waiting for CloudKit sync...")
         isPerformingInitialSync = true
 
+        // ⚠️ POLLING PATTERN (FALLBACK)
+        // TODO: Request AsyncStream support from SyncEngine for push-based status updates
         // PROBLEM: SyncEngine.start() is async - the fetch hasn't begun yet
         // SOLUTION: Wait for isSynchronizing to become TRUE first (sync started)
         //           Then wait for it to become FALSE (sync completed)

@@ -465,7 +465,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HappyToHaveLivedApp/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Happy to Have Lived";
+				INFOPLIST_KEY_CFBundleDisplayName = HtHL;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Testing: permissions are used to display fitness, mindfulness, and sleep records in app and to relate them to goals and aims set by the user.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Testing: permissions are used to display fitness, mindfulness, and sleep records in app and to relate them to goals and aims set by the user.";
@@ -539,7 +539,7 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HappyToHaveLivedApp/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Happy to Have Lived";
+				INFOPLIST_KEY_CFBundleDisplayName = HtHL;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "Testing: permissions are used to display fitness, mindfulness, and sleep records in app and to relate them to goals and aims set by the user.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Testing: permissions are used to display fitness, mindfulness, and sleep records in app and to relate them to goals and aims set by the user.";

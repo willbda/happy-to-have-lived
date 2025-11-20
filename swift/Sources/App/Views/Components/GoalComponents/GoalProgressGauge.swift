@@ -73,22 +73,16 @@ public struct GoalProgressGauge: View {
     // MARK: - Compact View
 
     private var compactGauge: some View {
-        HStack(spacing: 8) {
-            // System Gauge - automatic animations and accessibility
+        VStack(alignment: .leading) {
+
             Gauge(value: overallProgress, in: 0...1) {
-                Text("Progress")
             } currentValueLabel: {
                 Text("\(Int(overallProgress * 100))%")
             }
-            .gaugeStyle(.accessoryCircular)
+            
             .tint(progressColor)  // System handles semantic meaning
-            .frame(width: 32, height: 32)
 
-            if !measureTargets.isEmpty {
-                Text("(\(measureTargets.count) metric\(measureTargets.count == 1 ? "" : "s"))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+
         }
     }
 

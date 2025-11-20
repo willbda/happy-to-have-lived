@@ -12,6 +12,7 @@ import Models
 
 @available(iOS 26.0, macOS 26.0, *)
 public struct DashboardView: View {
+    @State private var showUtilities = false
 
     public init() {}
 
@@ -32,6 +33,19 @@ public struct DashboardView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             #endif
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showUtilities = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Utilities")
+                }
+            }
+            .sheet(isPresented: $showUtilities) {
+                UtilitiesMenuView()
+            }
         }
     }
 

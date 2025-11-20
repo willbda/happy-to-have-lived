@@ -18,15 +18,15 @@ import Models
 /// 3. ExpectationMeasure[] (metric targets)
 /// 4. GoalRelevance[] (value alignments)
 /// 5. TermGoalAssignment? (optional term assignment)
-public struct GoalFormData: Sendable {
+public struct GoalFormData: ExpectationFormDataBase, Sendable {
 
-    // MARK: - Expectation Fields
+    // MARK: - Expectation Fields (ExpectationFormDataBase)
 
-    public let title: String
-    public let detailedDescription: String
-    public let freeformNotes: String
-    public let expectationImportance: Int
-    public let expectationUrgency: Int
+    public var title: String
+    public var detailedDescription: String
+    public var freeformNotes: String
+    public var expectationImportance: Int
+    public var expectationUrgency: Int
 
     // MARK: - Goal Fields
 

@@ -14,6 +14,9 @@
   /// - Modern iOS 26+ Tab() API
   /// - Platform-adaptive styling (sidebar on iPadOS)
   /// - Dashboard-first orientation ("What's Happening Now")
+  ///
+  /// NOTE: Milestones and Obligations infrastructure is complete but not exposed
+  /// in main tab bar to follow HIG. Access via Dashboard or Goals detail views.
   public struct ContentView: View {
 
       public init() {}
@@ -49,35 +52,6 @@
       }
   }
 
-  // MARK: - Placeholder Views
-
-  /// Generic placeholder for future tabs
-  private struct PlaceholderTab: View {
-      let icon: String
-      let title: String
-      let subtitle: String
-
-      var body: some View {
-          NavigationStack {
-              VStack(spacing: 20) {
-                  Image(systemName: icon)
-                      .font(.system(size: 60))
-                      .foregroundStyle(.gray)
-
-                  Text(title)
-                      .font(.largeTitle)
-                      .fontWeight(.bold)
-
-                  Text(subtitle)
-                      .font(.subheadline)
-                      .foregroundStyle(.secondary)
-              }
-              .navigationTitle(title)
-          }
-      }
-  }
-
   #Preview {
       ContentView()
   }
-

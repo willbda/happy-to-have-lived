@@ -267,6 +267,133 @@ public enum TermValidation {
     }
 }
 
+// MARK: - Milestone Validation
+
+public enum MilestoneValidation {
+
+    /// Phase 1: Validate business rules on form data
+    public static func validateFormData(_ formData: MilestoneFormData) throws {
+        // Validate shared expectation fields (title, importance, urgency)
+        try formData.validateExpectationFields()
+
+        // No additional milestone-specific validation needed
+        // (targetDate is just a Date, no range constraints)
+    }
+
+    /// Phase 2: Validate assembled entity graph
+    public static func validateComplete(
+        _ expectation: Expectation,
+        _ milestone: Milestone
+    ) throws {
+        // Check: Milestone references correct expectation
+        try ValidationUtilities.requireFieldsMatch(
+            milestone.expectationId,
+            expectation.id,
+            field1: "Milestone.expectationId",
+            field2: "Expectation.id"
+        )
+
+        // Check: Expectation type is milestone
+        guard expectation.expectationType == .milestone else {
+            throw ValidationError.invalidExpectation(
+                "Expectation type must be 'milestone', got '\(expectation.expectationType)'"
+            )
+        }
+    }
+}
+
+// MARK: - Obligation Validation
+
+public enum ObligationValidation {
+
+    /// Phase 1: Validate business rules on form data
+    public static func validateFormData(_ formData: ObligationFormData) throws {
+        // Validate shared expectation fields (title, importance, urgency)
+        try formData.validateExpectationFields()
+
+        // No additional obligation-specific validation needed
+        // (deadline is just a Date, requestedBy and consequence are optional text)
+    }
+
+    /// Phase 2: Validate assembled entity graph
+    public static func validateComplete(
+        _ expectation: Expectation,
+        _ obligation: Obligation
+    ) throws {
+        // Check: Obligation references correct expectation
+        try ValidationUtilities.requireFieldsMatch(
+            obligation.expectationId,
+            expectation.id,
+            field1: "Obligation.expectationId",
+            field2: "Expectation.id"
+        )
+
+        // Check: Expectation type is obligation
+        guard expectation.expectationType == .obligation else {
+            throw ValidationError.invalidExpectation(
+                "Expectation type must be 'obligation', got '\(expectation.expectationType)'"
+            )
+        }
+    }
+}
+
+// MARK: - Measure Validation
+
+public enum MeasureValidation {
+
+    /// Phase 1: Validate business rules on form data
+    public static func validateFormData(_ formData: MeasureFormData) throws {
+        // Rule: Title required
+        try ValidationUtilities.requireFieldHasValue(formData.title, field: "Measure title")
+
+        // Rule: Unit required
+        try ValidationUtilities.requireFieldHasValue(formData.unit, field: "Measure unit")
+
+        // Rule: MeasureType required
+        try ValidationUtilities.requireFieldHasValue(formData.measureType, field: "Measure type")
+
+        // Rule: Conversion logic consistency
+        if let canonicalUnit = formData.canonicalUnit,
+            !canonicalUnit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            guard let conversionFactor = formData.conversionFactor, conversionFactor > 0 else {
+                throw ValidationError.databaseConstraint(
+                    "Conversion factor must be > 0 when canonical unit is specified"
+                )
+            }
+        }
+    }
+
+    /// Phase 2: Validate assembled entity
+    public static func validateComplete(_ measure: Measure) throws {
+        // Title required
+        guard let title = measure.title,
+            !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            throw ValidationError.missingRequiredField("Measure title is required")
+        }
+
+        // Unit required
+        guard !measure.unit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ValidationError.missingRequiredField("Measure unit is required")
+        }
+
+        // MeasureType required
+        guard !measure.measureType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ValidationError.missingRequiredField("Measure type is required")
+        }
+
+        // Conversion logic consistency
+        if let canonicalUnit = measure.canonicalUnit, !canonicalUnit.isEmpty {
+            guard let conversionFactor = measure.conversionFactor, conversionFactor > 0 else {
+                throw ValidationError.databaseConstraint(
+                    "Conversion factor must be > 0 when canonical unit is specified"
+                )
+            }
+        }
+    }
+}
+
 // MARK: - Design Notes
 
 // ARCHITECTURE DECISIONS:
@@ -319,3 +446,17 @@ public enum TermValidation {
 // }
 //
 // No mocking required - just pure functions!
+
+// MARK: - Sendable Conformance
+
+// All validation enums are Sendable because:
+// - They are enums with only static methods (no stored properties)
+// - All methods are pure functions (no mutable state)
+// - Safe to use from any actor context
+extension PersonalValueValidation: Sendable {}
+extension ActionValidation: Sendable {}
+extension GoalValidation: Sendable {}
+extension TermValidation: Sendable {}
+extension MilestoneValidation: Sendable {}
+extension ObligationValidation: Sendable {}
+extension MeasureValidation: Sendable {}

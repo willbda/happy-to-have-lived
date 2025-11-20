@@ -361,7 +361,7 @@ public struct Goal: DomainBasic {
 3. **Type Safety**: Leverage SQLiteData's compile-time safety with @Table/@Column macros
 4. **Error Handling**: Convert database errors to user-friendly ValidationErrors
 5. **Async/Await**: All database operations must be async for thread safety
-6. **No Direct SQL**: Use SQLiteData's structured queries instead of raw SQL strings
+
 
 ### Effective Development Practices
 

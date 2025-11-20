@@ -318,6 +318,117 @@ public final class TimePeriodRepository: BaseRepository<TimePeriodData> {
         }
     }
 
+    /// Fetch active terms (status = active or planned, endDate >= now)
+    ///
+    /// **Use Case**: Dashboard showing current/upcoming planning periods
+    /// **Implementation**: Combines status filter + date filter
+    /// - Status: active OR planned (excludes completed, cancelled, delayed, on_hold)
+    /// - Date: endDate >= now (excludes past terms)
+    ///
+    /// **Pattern**: Convenience method for common "show active terms" use case
+    ///
+    /// **SQL Pattern**:
+    /// ```sql
+    /// SELECT * FROM goalTerms gt JOIN timePeriods tp
+    /// WHERE gt.status IN ('active', 'planned')
+    ///   AND tp.endDate >= date('now')
+    /// ORDER BY gt.termNumber DESC
+    /// ```
+    public func fetchActiveTerms() async throws -> [TimePeriodData] {
+        try await read { db in
+            // Pattern: Raw SQL with JSON aggregation for goal assignments
+            // (Matches GoalRepository.fetchActiveGoals pattern)
+            let sql = """
+                SELECT
+                    gt.id,
+                    gt.timePeriodId,
+                    gt.termNumber,
+                    gt.theme,
+                    gt.reflection,
+                    gt.status,
+                    tp.title as timePeriodTitle,
+                    tp.detailedDescription as timePeriodDetailedDescription,
+                    tp.freeformNotes as timePeriodFreeformNotes,
+                    tp.logTime as timePeriodLogTime,
+                    tp.startDate,
+                    tp.endDate,
+                    COALESCE(
+                        (SELECT json_group_array(tga.goalId)
+                         FROM termGoalAssignments tga
+                         WHERE tga.termId = gt.id
+                         ORDER BY tga.assignmentOrder ASC),
+                        '[]'
+                    ) as assignedGoalIdsJson
+                FROM goalTerms gt
+                JOIN timePeriods tp ON gt.timePeriodId = tp.id
+                WHERE (gt.status = 'active' OR gt.status = 'planned')
+                  AND tp.endDate >= date('now')
+                ORDER BY gt.termNumber DESC
+                """
+
+            let rows = try TermQueryRow.fetchAll(db, sql: sql)
+            return try rows.map { try self.assembleTimePeriodData(from: $0) }
+        }
+    }
+
+    // MARK: - Internal Helpers (Assembly)
+
+    /// Assemble TimePeriodData from TermQueryRow
+    ///
+    /// **Purpose**: Convert raw SQL row + JSON fields into canonical TimePeriodData
+    /// **Pattern**: Same as GoalRepository.assembleGoalData (line 609)
+    private func assembleTimePeriodData(from row: TermQueryRow) throws -> TimePeriodData {
+        // Parse JSON array of goal IDs
+        let goalIds: [UUID]?
+        if row.assignedGoalIdsJson != "[]" {
+            let jsonData = Data(row.assignedGoalIdsJson.utf8)
+            goalIds = try JSONDecoder().decode([UUID].self, from: jsonData)
+                .sorted { $0.uuidString < $1.uuidString }
+        } else {
+            goalIds = nil
+        }
+
+        return TimePeriodData(
+            id: row.id,
+            termNumber: row.termNumber ?? 0,  // Default to 0 if null (should not happen in valid data)
+            theme: row.theme,
+            reflection: row.reflection,
+            status: row.status,
+            timePeriodId: row.timePeriodId,
+            timePeriodTitle: row.timePeriodTitle,
+            startDate: row.startDate,
+            endDate: row.endDate,
+            assignedGoalIds: goalIds
+        )
+    }
+
+    // MARK: - Query Row Types
+
+    /// Row structure for term queries with JSON aggregated goal assignments
+    ///
+    /// **Pattern**: Matches GoalRepository.GoalQueryRow (line 885)
+    /// **Purpose**: Decodable representation of SQL query results
+    private struct TermQueryRow: Decodable, FetchableRecord, Sendable {
+        // GoalTerm fields
+        let id: UUID
+        let timePeriodId: UUID
+        let termNumber: Int?
+        let theme: String?
+        let reflection: String?
+        let status: String?
+
+        // TimePeriod fields (prefixed to avoid ambiguity)
+        let timePeriodTitle: String?
+        let timePeriodDetailedDescription: String?
+        let timePeriodFreeformNotes: String?
+        let timePeriodLogTime: Date
+        let startDate: Date
+        let endDate: Date
+
+        // Relationship data (JSON aggregated from termGoalAssignments)
+        let assignedGoalIdsJson: String  // JSON array of UUIDs
+    }
+
     /// Check if overlapping terms exist (for validation)
     ///
     /// **Use Case**: Prevent creating Term 6 that overlaps with Term 5's dates

@@ -129,6 +129,15 @@ public enum ValidationError: LocalizedError {
     }
 }
 
+// MARK: - Sendable Conformance
+
+// ValidationError is Sendable because:
+// - It's an enum (value type)
+// - All associated values are String or primitive types (all Sendable)
+// - Safe to pass between actor boundaries
+// - No mutable state
+extension ValidationError: @unchecked Sendable {}
+
 // MARK: - Future Extensions
 
 // TODO: Add error codes for analytics tracking

@@ -77,14 +77,14 @@ extension ExpectationFormDataBase {
 
         // Importance range validation
         guard (1...10).contains(expectationImportance) else {
-            throw ValidationError.invalidInput(
+            throw ValidationError.invalidPriority(
                 "Importance must be between 1 and 10 (received: \(expectationImportance))"
             )
         }
 
         // Urgency range validation
         guard (1...10).contains(expectationUrgency) else {
-            throw ValidationError.invalidInput(
+            throw ValidationError.invalidPriority(
                 "Urgency must be between 1 and 10 (received: \(expectationUrgency))"
             )
         }

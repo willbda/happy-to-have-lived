@@ -39,7 +39,7 @@ import GRDB
 ///
 public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
 
-    public init(database: any DatabaseWriter) {
+    public override init(database: any DatabaseWriter) {
         super.init(database: database)
     }
 
@@ -80,7 +80,7 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
                 """
 
             let rows = try ObligationQueryRow.fetchAll(db, sql: sql)
-            return rows.map { assembleObligationWithDetails(from: $0) }
+            return rows.map { self.assembleObligationWithDetails(from: $0) }
         }
     }
 
@@ -113,7 +113,7 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
                 return nil
             }
 
-            return assembleObligationWithDetails(from: row)
+            return self.assembleObligationWithDetails(from: row)
         }
     }
 
@@ -168,7 +168,7 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
                 """
 
             let rows = try ObligationQueryRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
-            return rows.map { assembleObligationWithDetails(from: $0) }
+            return rows.map { self.assembleObligationWithDetails(from: $0) }
         }
     }
 
@@ -231,7 +231,7 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
                 """
 
             let rows = try ObligationQueryRow.fetchAll(db, sql: sql)
-            return rows.map { assembleObligationWithDetails(from: $0) }
+            return rows.map { self.assembleObligationWithDetails(from: $0) }
         }
     }
 
@@ -273,7 +273,7 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
                 """
 
             let rows = try ObligationQueryRow.fetchAll(db, sql: sql, arguments: [minimumUrgency])
-            return rows.map { assembleObligationWithDetails(from: $0) }
+            return rows.map { self.assembleObligationWithDetails(from: $0) }
         }
     }
 
@@ -287,22 +287,22 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
     /// - Returns: Assembled ObligationWithDetails
     private func assembleObligationWithDetails(from row: ObligationQueryRow) -> ObligationWithDetails {
         let obligation = Obligation(
-            id: row.obligationId,
             expectationId: row.expectationId,
             deadline: row.deadline,
             requestedBy: row.requestedBy,
-            consequence: row.consequence
+            consequence: row.consequence,
+            id: row.obligationId
         )
 
         let expectation = Expectation(
-            id: row.expectationId,
-            logTime: row.logTime,
             title: row.title,
             detailedDescription: row.detailedDescription,
             freeformNotes: row.freeformNotes,
             expectationType: row.expectationType,
             expectationImportance: row.expectationImportance,
-            expectationUrgency: row.expectationUrgency
+            expectationUrgency: row.expectationUrgency,
+            logTime: row.logTime,
+            id: row.expectationId
         )
 
         return ObligationWithDetails(

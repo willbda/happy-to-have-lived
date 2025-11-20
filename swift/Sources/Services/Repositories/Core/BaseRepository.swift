@@ -41,7 +41,7 @@ import GRDB
 /// }
 /// ```
 open class BaseRepository<DataType>: Repository
-    where DataType: Codable & Sendable & Identifiable
+    where DataType: Sendable & Identifiable
 {
     // MARK: - Properties
 

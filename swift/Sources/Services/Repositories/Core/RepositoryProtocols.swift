@@ -36,9 +36,9 @@ import GRDB
 public protocol Repository: Sendable {
     /// The canonical data type this repository manages
     ///
-    /// Must be Codable (for export), Sendable (for concurrency), and Identifiable (for SwiftUI).
-    /// Examples: ActionData, GoalData, PersonalValueData, TimePeriodData
-    associatedtype DataType: Codable & Sendable & Identifiable
+    /// Must be Sendable (for concurrency) and Identifiable (for SwiftUI).
+    /// Examples: ActionData, GoalData, PersonalValueData, TimePeriodData, MilestoneWithDetails, ObligationWithDetails
+    associatedtype DataType: Sendable & Identifiable
 
     /// Database writer instance (injected dependency)
     var database: any DatabaseWriter { get }

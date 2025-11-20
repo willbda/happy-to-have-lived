@@ -39,7 +39,7 @@ import GRDB
 ///
 public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
 
-    public init(database: any DatabaseWriter) {
+    public override init(database: any DatabaseWriter) {
         super.init(database: database)
     }
 
@@ -78,7 +78,7 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
                 """
 
             let rows = try MilestoneQueryRow.fetchAll(db, sql: sql)
-            return rows.map { assembleMilestoneWithDetails(from: $0) }
+            return rows.map { self.assembleMilestoneWithDetails(from: $0) }
         }
     }
 
@@ -109,7 +109,7 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
                 return nil
             }
 
-            return assembleMilestoneWithDetails(from: row)
+            return self.assembleMilestoneWithDetails(from: row)
         }
     }
 
@@ -162,7 +162,7 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
                 """
 
             let rows = try MilestoneQueryRow.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
-            return rows.map { assembleMilestoneWithDetails(from: $0) }
+            return rows.map { self.assembleMilestoneWithDetails(from: $0) }
         }
     }
 
@@ -223,7 +223,7 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
                 """
 
             let rows = try MilestoneQueryRow.fetchAll(db, sql: sql)
-            return rows.map { assembleMilestoneWithDetails(from: $0) }
+            return rows.map { self.assembleMilestoneWithDetails(from: $0) }
         }
     }
 
@@ -261,7 +261,7 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
                 """
 
             let rows = try MilestoneQueryRow.fetchAll(db, sql: sql)
-            return rows.map { assembleMilestoneWithDetails(from: $0) }
+            return rows.map { self.assembleMilestoneWithDetails(from: $0) }
         }
     }
 
@@ -275,20 +275,20 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
     /// - Returns: Assembled MilestoneWithDetails
     private func assembleMilestoneWithDetails(from row: MilestoneQueryRow) -> MilestoneWithDetails {
         let milestone = Milestone(
-            id: row.milestoneId,
             expectationId: row.expectationId,
-            targetDate: row.targetDate
+            targetDate: row.targetDate,
+            id: row.milestoneId
         )
 
         let expectation = Expectation(
-            id: row.expectationId,
-            logTime: row.logTime,
             title: row.title,
             detailedDescription: row.detailedDescription,
             freeformNotes: row.freeformNotes,
             expectationType: row.expectationType,
             expectationImportance: row.expectationImportance,
-            expectationUrgency: row.expectationUrgency
+            expectationUrgency: row.expectationUrgency,
+            logTime: row.logTime,
+            id: row.expectationId
         )
 
         return MilestoneWithDetails(

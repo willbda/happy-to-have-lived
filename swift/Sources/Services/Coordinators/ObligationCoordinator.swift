@@ -171,7 +171,9 @@ public final class ObligationCoordinator: Sendable {
             }
 
             // Delete Expectation (cascade deletes Obligation via FK ON DELETE CASCADE)
-            try Expectation.deleteAll(db) { $0.id == obligation.expectationId }
+            if let expectation = try Expectation.find(obligation.expectationId).fetchOne(db) {
+                try expectation.delete(db)
+            }
         }
     }
 }

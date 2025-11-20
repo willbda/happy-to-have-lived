@@ -167,7 +167,9 @@ public final class MilestoneCoordinator: Sendable {
             }
 
             // Delete Expectation (cascade deletes Milestone via FK ON DELETE CASCADE)
-            try Expectation.deleteAll(db) { $0.id == milestone.expectationId }
+            if let expectation = try Expectation.find(milestone.expectationId).fetchOne(db) {
+                try expectation.delete(db)
+            }
         }
     }
 }

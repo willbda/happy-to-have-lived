@@ -81,7 +81,7 @@ public struct GoalRowView: View {
 
             // Progress (if metrics exist)
             if !goal.measureTargets.isEmpty {
-                ProgressIndicator(
+                GoalProgressGauge(
                     measureTargets: goal.measureTargets,
                     actualProgress: [:],  // TODO: Calculate actual progress in Phase 2
                     displayMode: .compact

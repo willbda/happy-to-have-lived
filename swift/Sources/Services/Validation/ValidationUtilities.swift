@@ -388,3 +388,11 @@ public enum ValidationUtilities {
             start, end, start: startName, end: endName, allowEqual: allowEqual)
     }
 }
+
+// MARK: - Sendable Conformance
+
+// ValidationUtilities is Sendable because:
+// - It's an enum with only static methods (no stored properties)
+// - All methods are pure functions (no mutable state)
+// - Safe to use from any actor context
+extension ValidationUtilities: Sendable {}

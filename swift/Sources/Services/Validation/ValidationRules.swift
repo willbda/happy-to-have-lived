@@ -446,3 +446,17 @@ public enum MeasureValidation {
 // }
 //
 // No mocking required - just pure functions!
+
+// MARK: - Sendable Conformance
+
+// All validation enums are Sendable because:
+// - They are enums with only static methods (no stored properties)
+// - All methods are pure functions (no mutable state)
+// - Safe to use from any actor context
+extension PersonalValueValidation: Sendable {}
+extension ActionValidation: Sendable {}
+extension GoalValidation: Sendable {}
+extension TermValidation: Sendable {}
+extension MilestoneValidation: Sendable {}
+extension ObligationValidation: Sendable {}
+extension MeasureValidation: Sendable {}

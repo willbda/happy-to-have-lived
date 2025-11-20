@@ -1,10 +1,11 @@
 //
 // MilestoneRepository.swift
 // Written by Claude Code on 2025-11-19
+// Refactored by Claude Code on 2025-11-19
 //
 // PURPOSE: Repository for Milestone entities
-// PATTERN: Simple JOIN query (Milestone + Expectation)
-// SIMPLER THAN: GoalRepository (no measures/values), ActionRepository (no measurements)
+// PATTERN: BaseRepository with simple JOIN query (Milestone + Expectation)
+// EXTENDS: BaseRepository<MilestoneWithDetails> for consistency with other repositories
 //
 
 import Foundation
@@ -14,25 +15,32 @@ import GRDB
 
 /// Repository for managing Milestone entities
 ///
-/// **Architecture**: Simple pattern without BaseRepository
+/// **Architecture**: Extends BaseRepository<MilestoneWithDetails>
 /// - Milestone + Expectation JOIN (1:1 relationship)
 /// - No complex relationships to manage
 /// - Returns MilestoneWithDetails for UI consumption
 ///
-/// **Pattern**: Direct SQL queries with SQLiteData
-/// - Uses #sql macro for type safety where possible
-/// - Manual SQL for JOIN queries
+/// **Pattern**: BaseRepository with manual SQL for JOINs
+/// - Inherits error mapping, date filtering, pagination from BaseRepository
+/// - Manual SQL for JOIN queries (1:1 relationship)
 ///
-/// **What This Repository Provides**:
+/// **What BaseRepository Provides**:
+/// - Automatic error mapping (DatabaseError → ValidationError)
+/// - Date filtering helpers (buildDateFilter)
+/// - Read/write wrappers with error handling
+/// - Pagination support (fetch(limit:offset:), fetchRecent(limit:))
+///
+/// **What This Repository Adds**:
 /// - fetchAll(): All milestones with expectation details
 /// - fetchById(): Single milestone by ID
 /// - exists(): Check if milestone exists
+/// - fetchByStatus(): Filter by milestone status
+/// - fetchUpcoming(): Filter to upcoming milestones
 ///
-public final class MilestoneRepository: Sendable {
-    private let database: any DatabaseReader
+public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
 
-    public init(database: any DatabaseReader) {
-        self.database = database
+    public init(database: any DatabaseWriter) {
+        super.init(database: database)
     }
 
     /// Fetch all milestones with expectation details
@@ -49,8 +57,8 @@ public final class MilestoneRepository: Sendable {
     /// INNER JOIN expectations e ON m.expectationId = e.id
     /// ORDER BY m.targetDate ASC
     /// ```
-    public func fetchAll() async throws -> [MilestoneWithDetails] {
-        try await database.read { db in
+    public override func fetchAll() async throws -> [MilestoneWithDetails] {
+        try await read { db in
             let sql = """
                 SELECT
                     m.id as milestoneId,
@@ -78,7 +86,7 @@ public final class MilestoneRepository: Sendable {
     ///
     /// **Implementation**: Same as fetchAll() + WHERE m.id = ?
     public func fetchById(_ id: UUID) async throws -> MilestoneWithDetails? {
-        try await database.read { db in
+        try await read { db in
             let sql = """
                 SELECT
                     m.id as milestoneId,
@@ -108,8 +116,8 @@ public final class MilestoneRepository: Sendable {
     /// Check if milestone exists by ID
     ///
     /// **Implementation**: Simple COUNT query
-    public func exists(_ id: UUID) async throws -> Bool {
-        try await database.read { db in
+    public override func exists(_ id: UUID) async throws -> Bool {
+        try await read { db in
             let sql = "SELECT 1 FROM milestones WHERE id = ? LIMIT 1"
             return try Row.fetchOne(db, sql: sql, arguments: [id]) != nil
         }
@@ -119,24 +127,21 @@ public final class MilestoneRepository: Sendable {
     ///
     /// **Implementation**: Same as fetchAll() + WHERE e.logTime BETWEEN ? AND ?
     /// **Date Filter**: Uses expectation.logTime (when milestone was created)
-    /// **Pattern**: Matches GoalRepository.fetchForExport() for consistency
-    public func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [MilestoneWithDetails] {
-        // Build WHERE clause
-        var whereClause = ""
-        var arguments: [DatabaseValueConvertible] = []
-
-        if let start = startDate, let end = endDate {
-            whereClause = "WHERE e.logTime BETWEEN ? AND ?"
-            arguments = [start, end]
-        } else if let start = startDate {
-            whereClause = "WHERE e.logTime >= ?"
-            arguments = [start]
-        } else if let end = endDate {
-            whereClause = "WHERE e.logTime <= ?"
-            arguments = [end]
+    /// **Pattern**: Uses BaseRepository.buildDateFilter() for consistency
+    public override func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [MilestoneWithDetails] {
+        // Early return if no filter (use fetchAll)
+        guard startDate != nil || endDate != nil else {
+            return try await fetchAll()
         }
 
-        return try await database.read { db in
+        // Use BaseRepository helper for WHERE clause building
+        let (whereClause, arguments) = buildDateFilter(
+            from: startDate,
+            to: endDate,
+            dateColumn: "e.logTime"
+        )
+
+        return try await read { db in
             let sql = """
                 SELECT
                     m.id as milestoneId,
@@ -172,6 +177,7 @@ public final class MilestoneRepository: Sendable {
     /// - overdue: targetDate < now
     ///
     /// **Use Case**: Dashboard showing "due this week" or "overdue" milestones
+    /// **TODO**: Phase 3 - Add filtering UI to MilestonesListView
     ///
     /// **SQL Pattern**:
     /// ```sql
@@ -181,7 +187,7 @@ public final class MilestoneRepository: Sendable {
     ///    OR (status = 'overdue' AND targetDate < date('now'))
     /// ```
     public func fetchByStatus(_ status: MilestoneStatus) async throws -> [MilestoneWithDetails] {
-        try await database.read { db in
+        try await read { db in
             // Build WHERE clause based on status
             let whereClause: String
             switch status {
@@ -226,6 +232,7 @@ public final class MilestoneRepository: Sendable {
     /// **Implementation**: Filter to targetDate within N days from now
     /// **Default**: 30 days (next month)
     /// **Use Case**: "Upcoming milestones" dashboard widget
+    /// **TODO**: Phase 3 - Add date range filtering to MilestonesListView
     ///
     /// **SQL Pattern**:
     /// ```sql
@@ -233,7 +240,7 @@ public final class MilestoneRepository: Sendable {
     /// ORDER BY targetDate ASC
     /// ```
     public func fetchUpcoming(days: Int = 30) async throws -> [MilestoneWithDetails] {
-        try await database.read { db in
+        try await read { db in
             let sql = """
                 SELECT
                     m.id as milestoneId,
@@ -311,6 +318,15 @@ public final class MilestoneRepository: Sendable {
         let expectationUrgency: Int
     }
 }
+
+// MARK: - Sendable Conformance
+
+// MilestoneRepository is Sendable because:
+// - Inherits from BaseRepository (already Sendable)
+// - No additional mutable state
+// - All methods are async (thread-safe)
+// - Safe to pass between actor boundaries
+extension MilestoneRepository: @unchecked Sendable {}
 
 // MARK: - Result Type
 

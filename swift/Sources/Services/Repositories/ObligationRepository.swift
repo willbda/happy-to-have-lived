@@ -1,10 +1,11 @@
 //
 // ObligationRepository.swift
 // Written by Claude Code on 2025-11-19
+// Refactored by Claude Code on 2025-11-19
 //
 // PURPOSE: Repository for Obligation entities
-// PATTERN: Simple JOIN query (Obligation + Expectation)
-// SIMPLER THAN: GoalRepository (no measures/values), ActionRepository (no measurements)
+// PATTERN: BaseRepository with simple JOIN query (Obligation + Expectation)
+// EXTENDS: BaseRepository<ObligationWithDetails> for consistency with other repositories
 //
 
 import Foundation
@@ -14,25 +15,32 @@ import GRDB
 
 /// Repository for managing Obligation entities
 ///
-/// **Architecture**: Simple pattern without BaseRepository
+/// **Architecture**: Extends BaseRepository<ObligationWithDetails>
 /// - Obligation + Expectation JOIN (1:1 relationship)
 /// - No complex relationships to manage
 /// - Returns ObligationWithDetails for UI consumption
 ///
-/// **Pattern**: Direct SQL queries with SQLiteData
-/// - Uses #sql macro for type safety where possible
-/// - Manual SQL for JOIN queries
+/// **Pattern**: BaseRepository with manual SQL for JOINs
+/// - Inherits error mapping, date filtering, pagination from BaseRepository
+/// - Manual SQL for JOIN queries (1:1 relationship)
 ///
-/// **What This Repository Provides**:
+/// **What BaseRepository Provides**:
+/// - Automatic error mapping (DatabaseError → ValidationError)
+/// - Date filtering helpers (buildDateFilter)
+/// - Read/write wrappers with error handling
+/// - Pagination support (fetch(limit:offset:), fetchRecent(limit:))
+///
+/// **What This Repository Adds**:
 /// - fetchAll(): All obligations with expectation details
 /// - fetchById(): Single obligation by ID
 /// - exists(): Check if obligation exists
+/// - fetchByStatus(): Filter by obligation status
+/// - fetchByUrgency(): Filter by urgency level
 ///
-public final class ObligationRepository: Sendable {
-    private let database: any DatabaseReader
+public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
 
-    public init(database: any DatabaseReader) {
-        self.database = database
+    public init(database: any DatabaseWriter) {
+        super.init(database: database)
     }
 
     /// Fetch all obligations with expectation details
@@ -49,8 +57,8 @@ public final class ObligationRepository: Sendable {
     /// INNER JOIN expectations e ON o.expectationId = e.id
     /// ORDER BY o.deadline ASC
     /// ```
-    public func fetchAll() async throws -> [ObligationWithDetails] {
-        try await database.read { db in
+    public override func fetchAll() async throws -> [ObligationWithDetails] {
+        try await read { db in
             let sql = """
                 SELECT
                     o.id as obligationId,
@@ -80,7 +88,7 @@ public final class ObligationRepository: Sendable {
     ///
     /// **Implementation**: Same as fetchAll() + WHERE o.id = ?
     public func fetchById(_ id: UUID) async throws -> ObligationWithDetails? {
-        try await database.read { db in
+        try await read { db in
             let sql = """
                 SELECT
                     o.id as obligationId,
@@ -112,8 +120,8 @@ public final class ObligationRepository: Sendable {
     /// Check if obligation exists by ID
     ///
     /// **Implementation**: Simple COUNT query
-    public func exists(_ id: UUID) async throws -> Bool {
-        try await database.read { db in
+    public override func exists(_ id: UUID) async throws -> Bool {
+        try await read { db in
             let sql = "SELECT 1 FROM obligations WHERE id = ? LIMIT 1"
             return try Row.fetchOne(db, sql: sql, arguments: [id]) != nil
         }
@@ -123,24 +131,21 @@ public final class ObligationRepository: Sendable {
     ///
     /// **Implementation**: Same as fetchAll() + WHERE e.logTime BETWEEN ? AND ?
     /// **Date Filter**: Uses expectation.logTime (when obligation was created)
-    /// **Pattern**: Matches GoalRepository.fetchForExport() for consistency
-    public func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [ObligationWithDetails] {
-        // Build WHERE clause
-        var whereClause = ""
-        var arguments: [DatabaseValueConvertible] = []
-
-        if let start = startDate, let end = endDate {
-            whereClause = "WHERE e.logTime BETWEEN ? AND ?"
-            arguments = [start, end]
-        } else if let start = startDate {
-            whereClause = "WHERE e.logTime >= ?"
-            arguments = [start]
-        } else if let end = endDate {
-            whereClause = "WHERE e.logTime <= ?"
-            arguments = [end]
+    /// **Pattern**: Uses BaseRepository.buildDateFilter() for consistency
+    public override func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [ObligationWithDetails] {
+        // Early return if no filter (use fetchAll)
+        guard startDate != nil || endDate != nil else {
+            return try await fetchAll()
         }
 
-        return try await database.read { db in
+        // Use BaseRepository helper for WHERE clause building
+        let (whereClause, arguments) = buildDateFilter(
+            from: startDate,
+            to: endDate,
+            dateColumn: "e.logTime"
+        )
+
+        return try await read { db in
             let sql = """
                 SELECT
                     o.id as obligationId,
@@ -178,6 +183,7 @@ public final class ObligationRepository: Sendable {
     /// - overdue: deadline < now
     ///
     /// **Use Case**: Dashboard showing "approaching deadlines" or "overdue" obligations
+    /// **TODO**: Phase 3 - Add filtering UI to ObligationsListView
     ///
     /// **SQL Pattern**:
     /// ```sql
@@ -187,7 +193,7 @@ public final class ObligationRepository: Sendable {
     ///    OR (status = 'overdue' AND deadline < date('now'))
     /// ```
     public func fetchByStatus(_ status: ObligationStatus) async throws -> [ObligationWithDetails] {
-        try await database.read { db in
+        try await read { db in
             // Build WHERE clause based on status
             let whereClause: String
             switch status {
@@ -234,6 +240,7 @@ public final class ObligationRepository: Sendable {
     /// **Implementation**: Filter to expectationUrgency >= threshold
     /// **Use Case**: "High urgency obligations" dashboard filter
     /// **Default**: No default (caller must specify threshold)
+    /// **TODO**: Phase 3 - Add urgency filtering to ObligationsListView
     ///
     /// **SQL Pattern**:
     /// ```sql
@@ -243,7 +250,7 @@ public final class ObligationRepository: Sendable {
     ///
     /// **Example**: fetchByUrgency(8) returns obligations with urgency >= 8
     public func fetchByUrgency(minimumUrgency: Int) async throws -> [ObligationWithDetails] {
-        try await database.read { db in
+        try await read { db in
             let sql = """
                 SELECT
                     o.id as obligationId,
@@ -327,6 +334,15 @@ public final class ObligationRepository: Sendable {
         let expectationUrgency: Int
     }
 }
+
+// MARK: - Sendable Conformance
+
+// ObligationRepository is Sendable because:
+// - Inherits from BaseRepository (already Sendable)
+// - No additional mutable state
+// - All methods are async (thread-safe)
+// - Safe to pass between actor boundaries
+extension ObligationRepository: @unchecked Sendable {}
 
 // MARK: - Result Type
 

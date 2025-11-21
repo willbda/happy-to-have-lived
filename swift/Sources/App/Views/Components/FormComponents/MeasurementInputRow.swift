@@ -29,13 +29,13 @@ import Models
 public struct MeasurementInputRow: View {
     @Binding var measureId: UUID?
     @Binding var value: Double
-    let availableMeasures: [Measure]
+    let availableMeasures: [MeasureData]
     let onRemove: () -> Void
 
     public init(
         measureId: Binding<UUID?>,
         value: Binding<Double>,
-        availableMeasures: [Measure],
+        availableMeasures: [MeasureData],
         onRemove: @escaping () -> Void
     ) {
         self._measureId = measureId
@@ -107,9 +107,39 @@ public struct MeasurementInputRow: View {
                 measureId: .constant(UUID()),
                 value: .constant(5.2),
                 availableMeasures: [
-                    Measure(unit: "km", measureType: "distance", title: "Distance"),
-                    Measure(unit: "minutes", measureType: "time", title: "Time"),
-                    Measure(unit: "occasions", measureType: "count", title: "Occasions")
+                    MeasureData(
+                        id: UUID(),
+                        title: "Distance",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "km",
+                        measureType: "distance",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    ),
+                    MeasureData(
+                        id: UUID(),
+                        title: "Time",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "minutes",
+                        measureType: "time",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    ),
+                    MeasureData(
+                        id: UUID(),
+                        title: "Occasions",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "occasions",
+                        measureType: "count",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    )
                 ],
                 onRemove: { print("Removed") }
             )
@@ -124,7 +154,17 @@ public struct MeasurementInputRow: View {
                 measureId: .constant(nil),
                 value: .constant(0),
                 availableMeasures: [
-                    Measure(unit: "km", measureType: "distance", title: "Distance")
+                    MeasureData(
+                        id: UUID(),
+                        title: "Distance",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "km",
+                        measureType: "distance",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    )
                 ],
                 onRemove: { print("Removed") }
             )

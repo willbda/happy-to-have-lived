@@ -90,22 +90,7 @@ public struct ActionFormView: View {
         !title.isEmpty && !isSaving
     }
 
-    /// Available measures from DataStore (for dropdowns)
-    private var availableMeasures: [Measure] {
-        dataStore.measures.map { measureData in
-            Measure(
-                unit: measureData.unit,
-                measureType: measureData.measureType,
-                title: measureData.title,
-                detailedDescription: measureData.detailedDescription,
-                freeformNotes: measureData.freeformNotes,
-                canonicalUnit: measureData.canonicalUnit,
-                conversionFactor: measureData.conversionFactor,
-                logTime: measureData.logTime,
-                id: measureData.id
-            )
-        }
-    }
+    // No mapping needed - components now accept Data types directly!
 
     /// Available goals from DataStore (for dropdowns)
     private var availableGoals: [(Goal, String)] {
@@ -218,7 +203,7 @@ public struct ActionFormView: View {
                 MeasurementInputRow(
                     measureId: bindingForMeasurement(measurement.id).measureId,
                     value: bindingForMeasurement(measurement.id).value,
-                    availableMeasures: availableMeasures,
+                    availableMeasures: dataStore.measures,
                     onRemove: { removeMeasurement(id: measurement.id) }
                 )
             }
@@ -250,7 +235,7 @@ public struct ActionFormView: View {
         .task {
             // Validate measurements - filter out any referencing deleted measures
             // (DataStore already has measures loaded via ValueObservation)
-            let validMeasureIds = Set(availableMeasures.map { $0.id })
+            let validMeasureIds = Set(dataStore.measures.map { $0.id })
             measurements.removeAll { measurement in
                 guard let measureId = measurement.measureId else { return false }
                 return !validMeasureIds.contains(measureId)

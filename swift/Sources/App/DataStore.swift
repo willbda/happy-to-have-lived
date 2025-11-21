@@ -73,6 +73,12 @@ public final class DataStore {
     /// All terms (10-week periods) in the app
     public var terms: [TimePeriodData] = []
 
+    /// All milestones in the app
+    public var milestones: [MilestoneWithDetails] = []
+
+    /// All obligations in the app
+    public var obligations: [ObligationWithDetails] = []
+
     /// Loading state for UI feedback
     public var isLoading: Bool = false
 
@@ -228,6 +234,40 @@ public final class DataStore {
                 receiveValue: { [weak self] newTerms in
                     self?.terms = newTerms
                     print("🔄 Terms updated: \(newTerms.count)")
+                }
+            )
+            .store(in: &cancellables)
+
+        // Milestones observation
+        MilestoneRepository(database: database)
+            .observeAll()
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Milestones observation failed: \(error)")
+                    }
+                },
+                receiveValue: { [weak self] newMilestones in
+                    self?.milestones = newMilestones
+                    print("🔄 Milestones updated: \(newMilestones.count)")
+                }
+            )
+            .store(in: &cancellables)
+
+        // Obligations observation
+        ObligationRepository(database: database)
+            .observeAll()
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Obligations observation failed: \(error)")
+                    }
+                },
+                receiveValue: { [weak self] newObligations in
+                    self?.obligations = newObligations
+                    print("🔄 Obligations updated: \(newObligations.count)")
                 }
             )
             .store(in: &cancellables)
@@ -571,6 +611,146 @@ public final class DataStore {
         } catch {
             errorMessage = error.localizedDescription
             print("❌ DataStore: Failed to delete term - \(error)")
+            throw error
+        }
+    }
+
+    // MARK: - Milestones Operations
+
+    /// Load all milestones from database
+    ///
+    /// **NOTE**: With ValueObservation, this is rarely needed!
+    /// **Usage**: Only for manual refresh (pull-to-refresh)
+    /// **Normal flow**: ValueObservation automatically updates on any database change
+    public func loadMilestones() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = MilestoneRepository(database: database)
+            milestones = try await repository.fetchAll()
+            print("✅ DataStore: Loaded \(milestones.count) milestones")
+        } catch let error as ValidationError {
+            errorMessage = error.userMessage
+            print("❌ DataStore ValidationError: \(error.userMessage)")
+        } catch {
+            errorMessage = "Failed to load milestones: \(error.localizedDescription)"
+            print("❌ DataStore: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Create a new milestone
+    ///
+    /// **Pattern**: Coordinator creates milestone → ValueObservation auto-updates UI
+    /// **Result**: List views automatically update (no manual reload needed!)
+    public func createMilestone(from formData: MilestoneFormData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = MilestoneCoordinator(database: database)
+            _ = try await coordinator.create(from: formData)
+            errorMessage = nil
+
+            print("✅ DataStore: Created milestone (ValueObservation will update UI)")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to create milestone - \(error)")
+            throw error
+        }
+    }
+
+    /// Delete a milestone
+    ///
+    /// **Pattern**: Coordinator deletes, ValueObservation updates UI
+    /// **Result**: List views automatically update
+    public func deleteMilestone(_ milestoneData: MilestoneWithDetails) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = MilestoneCoordinator(database: database)
+            try await coordinator.delete(milestoneData)
+
+            milestones.removeAll { $0.id == milestoneData.id }
+            errorMessage = nil
+
+            print("✅ DataStore: Deleted milestone '\(milestoneData.title ?? \"\")'")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to delete milestone - \(error)")
+            throw error
+        }
+    }
+
+    // MARK: - Obligations Operations
+
+    /// Load all obligations from database
+    ///
+    /// **NOTE**: With ValueObservation, this is rarely needed!
+    /// **Usage**: Only for manual refresh (pull-to-refresh)
+    /// **Normal flow**: ValueObservation automatically updates on any database change
+    public func loadObligations() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = ObligationRepository(database: database)
+            obligations = try await repository.fetchAll()
+            print("✅ DataStore: Loaded \(obligations.count) obligations")
+        } catch let error as ValidationError {
+            errorMessage = error.userMessage
+            print("❌ DataStore ValidationError: \(error.userMessage)")
+        } catch {
+            errorMessage = "Failed to load obligations: \(error.localizedDescription)"
+            print("❌ DataStore: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Create a new obligation
+    ///
+    /// **Pattern**: Coordinator creates obligation → ValueObservation auto-updates UI
+    /// **Result**: List views automatically update (no manual reload needed!)
+    public func createObligation(from formData: ObligationFormData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = ObligationCoordinator(database: database)
+            _ = try await coordinator.create(from: formData)
+            errorMessage = nil
+
+            print("✅ DataStore: Created obligation (ValueObservation will update UI)")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to create obligation - \(error)")
+            throw error
+        }
+    }
+
+    /// Delete an obligation
+    ///
+    /// **Pattern**: Coordinator deletes, ValueObservation updates UI
+    /// **Result**: List views automatically update
+    public func deleteObligation(_ obligationData: ObligationWithDetails) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = ObligationCoordinator(database: database)
+            try await coordinator.delete(obligationData)
+
+            obligations.removeAll { $0.id == obligationData.id }
+            errorMessage = nil
+
+            print("✅ DataStore: Deleted obligation '\(obligationData.title ?? \"\")'")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to delete obligation - \(error)")
             throw error
         }
     }

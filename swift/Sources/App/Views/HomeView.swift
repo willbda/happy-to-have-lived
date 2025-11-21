@@ -65,7 +65,10 @@ public struct HomeView: View {
         @Bindable var navigationCoordinator = navigationCoordinator
 
         NavigationStack(path: $navigationCoordinator.path) {
+<<<<<<< HEAD
             NavigationContainer {
+=======
+>>>>>>> ab7420f98fa090bfa74f4e93ad6b242c47f60aa9
             ScrollView {
                 ZStack(alignment: .topLeading) {
                     // Hero image with parallax effect
@@ -138,6 +141,113 @@ public struct HomeView: View {
             }
             }  // NavigationContainer
         }  // NavigationStack
+    }
+
+    // MARK: - Computed Properties
+
+    /// Select hero image based on LLM suggestion or time of day
+    /// Available images: Aurora2, Aurora3, AuroraAndCarLights, BackyardTree,
+    /// BigLakeMountains, ChicagoRoses, FamilyHike, Forest, Moody, Mountains4
+    private var selectedHeroImage: String {
+        // Priority 1: LLM-suggested image (if available in asset catalog)
+        if let suggestedImage = greetingData?.suggestedHeroImage {
+            // Validate it exists in our catalog
+            let availableImages = [
+                "Aurora2", "Aurora3", "AuroraAndCarLights", "BackyardTree",
+                "BigLakeMountains", "ChicagoRoses", "FamilyHike", "Forest",
+                "Moody", "Mountains4",
+            ]
+            if availableImages.contains(suggestedImage) {
+                return suggestedImage
+            }
+            .navigationDestination(for: UUID.self) { goalId in
+                GoalDetailView(goalId: goalId)
+            }
+        }
+
+        // Priority 2: Time-of-day based fallback using actual asset catalog images
+        let hour = Calendar.current.component(.hour, from: Date())
+
+        switch hour {
+        case 5..<8:
+            return "Aurora2"  // Early morning (sunrise aurora)
+        case 8..<12:
+            return "Mountains4"  // Morning (bright mountains)
+        case 12..<17:
+            return "Forest"  // Afternoon (green forest)
+        case 17..<20:
+            return "Moody"  // Evening (moody sunset)
+        default:
+            return "BackyardTree"  // Night (night lights)
+        }
+    }
+
+    // MARK: - Greeting Components
+
+    /// Dynamic greeting overlay with LLM-generated content
+    private var greetingOverlay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Spacer()
+
+            if isLoadingGreeting {
+                // Loading state (shimmer effect)
+                VStack(alignment: .leading, spacing: 8) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(.white.opacity(0.3))
+                        .frame(width: 150, height: 20)
+
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(.white.opacity(0.3))
+                        .frame(width: 200, height: 36)
+
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(.white.opacity(0.3))
+                        .frame(width: 180, height: 36)
+                }
+            } else if let greeting = greetingData {
+                // Dynamic greeting (LLM-generated)
+                Text(greeting.timeGreeting)
+                    .font(.title3)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(radius: 2)
+
+                Text(greeting.motivationalLine1)
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+
+                Text(greeting.motivationalLine2)
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+            } else {
+                // Fallback greeting (if LLM unavailable or failed)
+                Text("Hello!")
+                    .font(.title3)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(radius: 2)
+
+                Text("Here's what's")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+
+                Text("happening")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                    .shadow(radius: 4)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 30)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: heroHeight)
     }
 
     // MARK: - Computed Properties
@@ -603,6 +713,7 @@ public struct HomeView: View {
         }
 
         isLoadingGreeting = false
+<<<<<<< HEAD
     }
 
     // MARK: - Toolbar
@@ -643,6 +754,8 @@ public struct HomeView: View {
                     .imageScale(.large)
             }
         }
+=======
+>>>>>>> ab7420f98fa090bfa74f4e93ad6b242c47f60aa9
     }
 }
 

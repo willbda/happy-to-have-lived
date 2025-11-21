@@ -21,8 +21,8 @@
 //  NavigationLink or the navigation stack's path."
 //
 
-import SwiftUI
 import Foundation
+import SwiftUI
 
 /// Manages navigation state for the app
 ///

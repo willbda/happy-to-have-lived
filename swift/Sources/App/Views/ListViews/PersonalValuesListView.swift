@@ -4,9 +4,10 @@
 // Refactored on 2025-11-13 to use ViewModel pattern
 // Refactored on 2025-11-16 to use PersonalValueData
 // Refactored on 2025-11-19 for HIG compliance and consistency
+// Refactored on 2025-11-20 to use DataStore (declarative pattern)
 //
 // PURPOSE: List of personal values with priority and level display
-// DATA SOURCE: PersonalValuesListViewModel (returns PersonalValueData)
+// DATA SOURCE: DataStore (environment object, single source of truth)
 // INTERACTIONS: Tap to edit, swipe to delete, empty state, context menu
 //
 
@@ -15,103 +16,86 @@ import SwiftUI
 
 /// List view for personal values
 ///
-/// **PATTERN**: ViewModel-based (migrated from @FetchAll)
-/// **DATA**: PersonalValuesListViewModel → PersonalValueRepository → Database
+/// **PATTERN**: Declarative SwiftUI with DataStore (Apple's recommended pattern)
+/// **DATA**: DataStore (environment) → Observable state → Automatic UI updates
 /// **DISPLAY**: PersonalValuesRowView for each value (grouped by level)
 /// **INTERACTIONS**: Tap to edit, swipe to delete, pull to refresh, context menu
 ///
-/// **HIG COMPLIANCE** (2025-11-19):
-/// - Consistent feedback: Reload after create/edit/delete
-/// - Platform support: macOS keyboard shortcuts and delete command
-/// - Proper alert presentation with explicit bindings
-/// - Context menu for desktop interaction patterns
-/// - Sectioned list with clear hierarchy
+/// **DECLARATIVE ARCHITECTURE** (2025-11-20):
+/// - No manual refresh calls (DataStore updates propagate automatically)
+/// - No separate ViewModels (DataStore is single source of truth)
+/// - Truly reactive (views observe DataStore via @Environment)
+/// - Follows Apple's sample code pattern (AddRichGraphicsToYourSwiftUIApp)
 public struct PersonalValuesListView: View {
-    @State private var viewModel = PersonalValuesListViewModel()
+    @Environment(DataStore.self) private var dataStore
 
     @State private var showingAddValue = false
     @State private var valueToEdit: PersonalValueData?
     @State private var valueToDelete: PersonalValueData?
-    @State private var selectedValue: PersonalValueData?  // For keyboard navigation
+    @State private var selectedValue: PersonalValueData?
 
     public init() {}
 
     public var body: some View {
-        Group {
-            if viewModel.isLoading {
-                // Loading state
-                ProgressView("Loading values...")
-            } else if viewModel.values.isEmpty {
-                // Empty state
-                emptyState
-            } else {
-                // Values list
-                valuesList
-            }
-        }
-        .background(.regularMaterial)  // System material with automatic Liquid Glass
-        .navigationTitle("Values")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingAddValue = true
-                } label: {
-                    Label("Add Value", systemImage: "plus")
-                }
-                .keyboardShortcut("n", modifiers: .command)
-            }
-        }
-        .task {
-            // Load values when view appears
-            await viewModel.loadValues()
-        }
-        .refreshable {
-            // Pull-to-refresh uses same load method
-            await viewModel.loadValues()
-        }
-        .sheet(isPresented: $showingAddValue) {
-            // Reload when sheet dismisses
-            Task {
-                await viewModel.loadValues()
-            }
-        } content: {
-            NavigationStack {
-                PersonalValuesFormView()
-            }
-        }
-        .sheet(item: $valueToEdit) { valueData in
-            NavigationStack {
-                PersonalValuesFormView(valueToEdit: valueData)
-            }
-        }
-        .onChange(of: valueToEdit) { oldValue, newValue in
-            // Reload list when edit sheet is dismissed
-            if newValue == nil && oldValue != nil {
-                Task {
-                    await viewModel.loadValues()
+        mainContent
+            .navigationTitle("Values")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingAddValue = true
+                    } label: {
+                        Label("Add Value", systemImage: "plus")
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
                 }
             }
-        }
-        .alert(
-            "Delete Value",
-            isPresented: .constant(valueToDelete != nil),
-            presenting: valueToDelete
-        ) { valueData in
-            Button("Cancel", role: .cancel) {
-                valueToDelete = nil
+            .refreshable {
+                await dataStore.loadValues()
             }
-            Button("Delete", role: .destructive) {
-                delete(valueData)
+            .sheet(isPresented: $showingAddValue) {
+                NavigationStack {
+                    PersonalValuesFormView()
+                }
             }
-        } message: { valueData in
-            Text("Are you sure you want to delete '\(valueData.title)'?")
-        }
-        .alert("Error", isPresented: .constant(viewModel.hasError)) {
-            Button("OK") {
-                viewModel.errorMessage = nil
+            // NO onDismiss needed - DataStore updates automatically!
+            .sheet(item: $valueToEdit) { valueData in
+                NavigationStack {
+                    PersonalValuesFormView(valueToEdit: valueData)
+                }
             }
-        } message: {
-            Text(viewModel.errorMessage ?? "Unknown error")
+            // NO onDismiss needed - DataStore updates automatically!
+            .alert("Delete Value", isPresented: .constant(valueToDelete != nil), presenting: valueToDelete) { valueData in
+                Button("Cancel", role: .cancel) {
+                    valueToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    delete(valueData)
+                }
+            } message: { valueData in
+                Text("Are you sure you want to delete '\(valueData.title)'?")
+            }
+            .alert("Error", isPresented: .constant(dataStore.errorMessage != nil)) {
+                Button("OK") {
+                    // Error will clear on next operation
+                }
+            } message: {
+                Text(dataStore.errorMessage ?? "Unknown error")
+            }
+    }
+
+    // MARK: - Main Content
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if dataStore.isLoading {
+            // Loading state
+            ProgressView("Loading values...")
+        } else if dataStore.values.isEmpty {
+            // Empty state
+            emptyState
+        } else {
+            // Values list
+            valuesList
         }
     }
 
@@ -134,11 +118,11 @@ public struct PersonalValuesListView: View {
 
     private var valuesList: some View {
         List(selection: $selectedValue) {
-            // PERFORMANCE: Dictionary grouping computed in ViewModel (O(n))
-            // Lookup per level is O(1)
-            // Database: Already sorted by valueLevel + priority via ORDER BY
+            // Group values by level for sectioned display
+            // Database returns values sorted by priority
             ForEach(ValueLevel.allCases, id: \.self) { level in
-                if let levelValues = viewModel.groupedValues[level.rawValue], !levelValues.isEmpty {
+                let levelValues = dataStore.values.filter { $0.valueLevel == level.rawValue }
+                if !levelValues.isEmpty {
                     Section(level.displayName) {
                         ForEach(levelValues) { valueData in
                             PersonalValuesRowView(value: valueData)
@@ -204,7 +188,7 @@ public struct PersonalValuesListView: View {
 
     private func delete(_ valueData: PersonalValueData) {
         Task {
-            await viewModel.deleteValue(valueData)
+            try? await dataStore.deleteValue(valueData)
             valueToDelete = nil
         }
     }

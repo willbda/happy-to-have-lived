@@ -3,9 +3,10 @@
 // Written by Claude Code on 2025-11-02
 // Refactored on 2025-11-13 to use ViewModel pattern
 // Refactored on 2025-11-19 for HIG compliance and consistency
+// Refactored on 2025-11-20 to use DataStore (declarative pattern)
 //
 // PURPOSE: List view for Actions with measurements and goal contributions
-// DATA SOURCE: ActionsListViewModel (replaces @Fetch pattern)
+// DATA SOURCE: DataStore (environment object, single source of truth)
 // INTERACTIONS: Tap to edit, swipe to delete, pull to refresh, context menu
 //
 
@@ -15,20 +16,18 @@ import Services
 
 /// Main list view for Actions
 ///
-/// **PATTERN**: ViewModel-based (migrated from @Fetch)
-/// **DATA**: ActionsListViewModel → ActionRepository + GoalRepository → Database
+/// **PATTERN**: Declarative SwiftUI with DataStore (Apple's recommended pattern)
+/// **DATA**: DataStore (environment) → Observable state → Automatic UI updates
 /// **DISPLAY**: ActionRowView for each action + QuickAddSection
 /// **INTERACTIONS**: Tap to edit, swipe to delete, pull to refresh, context menu
 ///
-/// **HIG COMPLIANCE** (2025-11-19):
-/// - Consistent feedback: Reload after create/edit/delete
-/// - Platform support: macOS keyboard shortcuts and delete command
-/// - Proper alert presentation with explicit bindings
-/// - Context menu for desktop interaction patterns
+/// **DECLARATIVE ARCHITECTURE** (2025-11-20):
+/// - No manual refresh calls (DataStore updates propagate automatically)
+/// - No separate ViewModels (DataStore is single source of truth)
+/// - Truly reactive (views observe DataStore via @Environment)
+/// - Follows Apple's sample code pattern (AddRichGraphicsToYourSwiftUIApp)
 public struct ActionsListView: View {
-    // MARK: - State
-
-    @State private var viewModel = ActionsListViewModel()
+    @Environment(DataStore.self) private var dataStore
 
     @State private var showingAddAction = false
     @State private var actionToEdit: Models.ActionData?
@@ -36,102 +35,77 @@ public struct ActionsListView: View {
     @State private var selectedAction: Models.ActionData?
     @State private var formData: ActionFormData?  // For Quick Add pre-filling
 
-    // MARK: - Initialization
-
     public init() {}
 
     // MARK: - Body
 
     public var body: some View {
-        Group {
-            if viewModel.isLoading {
-                // Loading state
-                ProgressView("Loading actions...")
-            } else if viewModel.actions.isEmpty {
-                // Empty state
-                emptyState
-            } else {
-                // Actions list
-                actionsList
-            }
-        }
-        .background(.regularMaterial)  // System material with automatic Liquid Glass
-        .navigationTitle("Actions")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingAddAction = true
-                } label: {
-                    Label("Add Action", systemImage: "plus")
-                }
-                .keyboardShortcut("n", modifiers: .command)
-            }
-        }
-        .task {
-            // Load actions and active goals when view appears
-            await viewModel.loadActions()
-            await viewModel.loadActiveGoals()
-        }
-        .refreshable {
-            // Pull-to-refresh uses same load methods
-            await viewModel.loadActions()
-            await viewModel.loadActiveGoals()
-        }
-        .sheet(isPresented: $showingAddAction) {
-            NavigationStack {
-                if let data = formData {
-                    // Quick Add mode (pre-filled from duplicate or goal)
-                    ActionFormView(initialData: data)
-                } else {
-                    // Create mode (empty form)
-                    ActionFormView()
+        mainContent
+            .navigationTitle("Actions")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingAddAction = true
+                    } label: {
+                        Label("Add Action", systemImage: "plus")
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
                 }
             }
-        }
-        .onChange(of: showingAddAction) { _, isShowing in
-            // Clear formData and refresh when sheet is dismissed
-            if !isShowing {
-                formData = nil
-                Task {
-                    await viewModel.loadActions()
-                    await viewModel.loadActiveGoals()
+            .refreshable {
+                // Pull-to-refresh reloads from database
+                await dataStore.loadActions()
+            }
+            .sheet(isPresented: $showingAddAction) {
+                NavigationStack {
+                    if let data = formData {
+                        // Quick Add mode (pre-filled from duplicate or goal)
+                        ActionFormView(initialData: data)
+                    } else {
+                        // Create mode (empty form)
+                        ActionFormView()
+                    }
                 }
             }
-        }
-        .sheet(item: $actionToEdit) { actionData in
-            NavigationStack {
-                ActionFormView(actionToEdit: actionData)
-            }
-        }
-        .onChange(of: actionToEdit) { oldValue, newValue in
-            // Reload list when edit sheet is dismissed
-            if newValue == nil && oldValue != nil {
-                Task {
-                    await viewModel.loadActions()
-                    await viewModel.loadActiveGoals()
+            // NO onDismiss needed - DataStore updates automatically!
+            .sheet(item: $actionToEdit) { actionData in
+                NavigationStack {
+                    ActionFormView(actionToEdit: actionData)
                 }
             }
-        }
-        .alert(
-            "Delete Action",
-            isPresented: .constant(actionToDelete != nil),
-            presenting: actionToDelete
-        ) { actionData in
-            Button("Cancel", role: .cancel) {
-                actionToDelete = nil
+            // NO onDismiss needed - DataStore updates automatically!
+            .alert("Delete Action", isPresented: .constant(actionToDelete != nil), presenting: actionToDelete) { actionData in
+                Button("Cancel", role: .cancel) {
+                    actionToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    delete(actionData)
+                }
+            } message: { actionData in
+                Text("Are you sure you want to delete '\(actionData.title ?? "this action")'?")
             }
-            Button("Delete", role: .destructive) {
-                delete(actionData)
+            .alert("Error", isPresented: .constant(dataStore.errorMessage != nil)) {
+                Button("OK") {
+                    // Error will clear on next operation
+                }
+            } message: {
+                Text(dataStore.errorMessage ?? "Unknown error")
             }
-        } message: { actionData in
-            Text("Are you sure you want to delete '\(actionData.title ?? "this action")'?")
-        }
-        .alert("Error", isPresented: .constant(viewModel.hasError)) {
-            Button("OK") {
-                viewModel.errorMessage = nil
-            }
-        } message: {
-            Text(viewModel.errorMessage ?? "Unknown error")
+    }
+
+    // MARK: - Main Content
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if dataStore.isLoading {
+            // Loading state
+            ProgressView("Loading actions...")
+        } else if dataStore.actions.isEmpty {
+            // Empty state
+            emptyState
+        } else {
+            // Actions list
+            actionsList
         }
     }
 
@@ -156,8 +130,8 @@ public struct ActionsListView: View {
         List(selection: $selectedAction) {
             // Quick Add Section
             QuickAddSection(
-                recentActions: Array(viewModel.actions.prefix(5)),
-                activeGoals: Array(viewModel.activeGoals.prefix(5)),
+                recentActions: Array(dataStore.actions.prefix(5)),
+                activeGoals: Array(dataStore.activeGoals.prefix(5)),
                 onDuplicateAction: { preFilledData in
                     formData = preFilledData
                     showingAddAction = true
@@ -170,7 +144,7 @@ public struct ActionsListView: View {
             )
 
             // Actions List
-            ForEach(viewModel.actions) { actionData in
+            ForEach(dataStore.actions) { actionData in
                 ActionRowView(action: actionData)
                     .onTapGesture {
                         edit(actionData)
@@ -231,7 +205,7 @@ public struct ActionsListView: View {
 
     private func delete(_ actionData: Models.ActionData) {
         Task {
-            await viewModel.deleteAction(actionData)
+            try? await dataStore.deleteAction(actionData)
             actionToDelete = nil
         }
     }

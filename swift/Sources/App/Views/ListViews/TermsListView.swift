@@ -3,9 +3,10 @@
 // Written by Claude Code on 2025-11-02
 // Refactored on 2025-11-13 to use ViewModel pattern
 // Refactored on 2025-11-19 for HIG compliance and consistency
+// Refactored on 2025-11-20 to use DataStore (declarative pattern)
 //
 // PURPOSE: List view showing Terms with their TimePeriod details
-// DATA SOURCE: TermsListViewModel (replaces @Fetch pattern)
+// DATA SOURCE: DataStore (environment object, single source of truth)
 // INTERACTIONS: Tap to edit, swipe to delete, empty state, context menu
 //
 
@@ -14,30 +15,30 @@ import SwiftUI
 
 /// List view for terms (10-week planning periods)
 ///
-/// **PATTERN**: ViewModel-based (migrated from @Fetch)
-/// **DATA**: TermsListViewModel → TimePeriodRepository → Database
+/// **PATTERN**: Declarative SwiftUI with DataStore (Apple's recommended pattern)
+/// **DATA**: DataStore (environment) → Observable state → Automatic UI updates
 /// **DISPLAY**: TermRowView for each term
 /// **INTERACTIONS**: Tap to edit, swipe to delete, pull to refresh, context menu
 ///
-/// **HIG COMPLIANCE** (2025-11-19):
-/// - Consistent feedback: Reload after create/edit/delete
-/// - Platform support: macOS keyboard shortcuts and delete command
-/// - Proper alert presentation with explicit bindings
-/// - Context menu for desktop interaction patterns
+/// **DECLARATIVE ARCHITECTURE** (2025-11-20):
+/// - No manual refresh calls (DataStore updates propagate automatically)
+/// - No separate ViewModels (DataStore is single source of truth)
+/// - Truly reactive (views observe DataStore via @Environment)
+/// - Follows Apple's sample code pattern (AddRichGraphicsToYourSwiftUIApp)
 public struct TermsListView: View {
-    @State private var viewModel = TermsListViewModel()
+    @Environment(DataStore.self) private var dataStore
 
     @State private var showingForm = false
-    @State private var termToEdit: TimePeriodData?  // nil = create mode
-    @State private var selectedTerm: TimePeriodData?  // For keyboard navigation
-    @State private var termToDelete: TimePeriodData?  // For confirmation
+    @State private var termToEdit: TimePeriodData?
+    @State private var selectedTerm: TimePeriodData?
+    @State private var termToDelete: TimePeriodData?
 
     public var body: some View {
         Group {
-            if viewModel.isLoading {
+            if dataStore.isLoading {
                 // Loading state
                 ProgressView("Loading terms...")
-            } else if viewModel.terms.isEmpty {
+            } else if dataStore.terms.isEmpty {
                 // Empty state
                 emptyState
             } else {
@@ -45,7 +46,6 @@ public struct TermsListView: View {
                 termsList
             }
         }
-        .background(.regularMaterial)  // System material with automatic Liquid Glass
         .navigationTitle("Terms")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -58,54 +58,44 @@ public struct TermsListView: View {
                 .keyboardShortcut("n", modifiers: .command)
             }
         }
-        .task {
-            // Load terms when view appears
-            await viewModel.loadTerms()
-        }
         .refreshable {
-            // Pull-to-refresh uses same load method
-            await viewModel.loadTerms()
+            await dataStore.loadTerms()
         }
         .sheet(isPresented: $showingForm) {
-            // Reload when sheet dismisses (automatic via @Observable)
-            Task {
-                await viewModel.loadTerms()
-            }
-        } content: {
             NavigationStack {
                 TermFormView(
                     termToEdit: termToEdit,
-                    suggestedTermNumber: termToEdit == nil ? viewModel.nextTermNumber : nil
+                    suggestedTermNumber: termToEdit == nil ? nextTermNumber : nil
                 )
             }
             // Force sheet to recreate when termToEdit changes
             // Fixes bug: clicking same term twice showed "New Term" instead of edit
             .id(termToEdit?.id)
         }
-        .alert(
-            "Delete Term",
-            isPresented: .constant(termToDelete != nil),
-            presenting: termToDelete
-        ) { termData in
+        // NO onDismiss needed - DataStore updates automatically!
+        .alert("Delete Term", isPresented: .constant(termToDelete != nil), presenting: termToDelete) { termData in
             Button("Cancel", role: .cancel) {
                 termToDelete = nil
             }
             Button("Delete", role: .destructive) {
-                Task {
-                    await viewModel.deleteTerm(termData)
-                    termToDelete = nil
-                }
+                delete(termData)
             }
         } message: { termData in
             Text("Are you sure you want to delete Term \(termData.termNumber)?")
         }
-        .alert("Error", isPresented: .constant(viewModel.hasError)) {
+        .alert("Error", isPresented: .constant(dataStore.errorMessage != nil)) {
             Button("OK") {
-                viewModel.errorMessage = nil
+                // Error will clear on next operation
             }
         } message: {
-            Text(viewModel.errorMessage ?? "Unknown error")
+            Text(dataStore.errorMessage ?? "Unknown error")
         }
+    }
+
+    // MARK: - Computed Properties
+
+    private var nextTermNumber: Int {
+        (dataStore.terms.map { $0.termNumber }.max() ?? 0) + 1
     }
 
     // MARK: - Empty State
@@ -128,7 +118,7 @@ public struct TermsListView: View {
 
     private var termsList: some View {
         List(selection: $selectedTerm) {
-            ForEach(viewModel.terms) { termData in
+            ForEach(dataStore.terms) { termData in
                 TermRowView(timePeriod: termData)
                     .onTapGesture {
                         edit(termData)
@@ -186,6 +176,13 @@ public struct TermsListView: View {
     private func edit(_ termData: TimePeriodData) {
         termToEdit = termData
         showingForm = true
+    }
+
+    private func delete(_ termData: TimePeriodData) {
+        Task {
+            try? await dataStore.deleteTerm(termData)
+            termToDelete = nil
+        }
     }
 }
 

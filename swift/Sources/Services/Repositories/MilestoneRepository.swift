@@ -43,7 +43,7 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
         super.init(database: database)
     }
 
-    /// Fetch all milestones with expectation details (synchronous)
+    /// Fetch all milestones with expectation details (synchronous, required by BaseRepository)
     ///
     /// **Implementation**: Simple JOIN query
     /// - milestone INNER JOIN expectations

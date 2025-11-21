@@ -466,7 +466,15 @@ class SwiftFileScanner:
         elif 'ViewModels' in path_str:
             return 'ViewModel-Utility'
 
-        # Views
+        # App infrastructure (check before Views to catch App/Extensions, App/DataStore)
+        elif 'App/Extensions' in path_str or 'Extensions/' in path_str:
+            return 'Extension'
+        elif 'DataStore.swift' in path_str or 'DataStore/' in path_str:
+            return 'DataStore'
+        elif 'HappyToHaveLivedApp.swift' in path_str:
+            return 'App-Entry'
+
+        # Views (check specific subdirectories first, then catch-all for App/Views)
         elif 'Views/ListViews' in path_str:
             return 'View-List'
         elif 'Views/FormViews' in path_str:
@@ -489,6 +497,9 @@ class SwiftFileScanner:
             return 'View-CSV'
         elif 'Views/Templates' in path_str:
             return 'View-Template'
+        elif 'App/Views/' in path_str or '/Views/' in path_str:
+            # Top-level views (not in subdirectories) like HomeView.swift, ContentView.swift
+            return 'View-Utility'
 
         return 'Unknown'
 
@@ -524,12 +535,29 @@ class SwiftFileScanner:
 
     def _extract_key_pattern(self, content: str, layer: str) -> Optional[str]:
         """Extract architectural pattern used"""
-        # Repository pattern
-        if 'BaseRepository' in content:
+        # DataStore pattern (check first to avoid false BaseRepository match)
+        if layer == 'DataStore' or 'DataStore.swift' in content:
+            if '@Observable' in content and '@MainActor' in content:
+                return "DataStore (@Observable @MainActor)"
+            return "DataStore"
+
+        # Repository pattern - be more specific (must be class definition, not just import)
+        if re.search(r'class\s+\w+\s*:\s*.*BaseRepository', content):
             match = re.search(r'BaseRepository<(\w+)>', content)
             if match:
                 return f"BaseRepository<{match.group(1)}>"
             return "BaseRepository"
+
+        # Extension pattern (check layer first for files in App/Extensions/)
+        if layer == 'Extension':
+            if 'extension View' in content:
+                return "View Extension"
+            elif re.search(r'extension\s+\w+', content):
+                return "Extension"
+        elif 'extension View' in content:
+            return "View Extension"
+        elif 'extension ' in content and layer != 'DataStore':
+            return "Extension"
 
         # ViewModel pattern
         if '@Observable' in content:
@@ -605,7 +633,7 @@ class ViolationDetector:
         self.db = db
 
     def check_all_violations(self):
-        """Run all violation checks"""
+        """Run all violation checks with auto-resolution"""
         violations = []
 
         violations.extend(self._check_repository_baserepository())
@@ -613,20 +641,46 @@ class ViolationDetector:
         violations.extend(self._check_missing_sendable())
         violations.extend(self._check_missing_mainactor())
 
-        # Save violations to database
+        # Build set of currently violating (file_id, violation_type) pairs
+        current_violations = {(v['file_id'], v['violation_type']) for v in violations}
+
+        # Mark previously open violations as 'fixed' if no longer present
+        cursor = self.db.conn.execute("""
+            SELECT id, file_id, violation_type FROM violations
+            WHERE status = 'open'
+        """)
+
+        for row in cursor.fetchall():
+            if (row['file_id'], row['violation_type']) not in current_violations:
+                # This violation was fixed!
+                self.db.conn.execute("""
+                    UPDATE violations
+                    SET status = 'fixed', resolved_at = ?
+                    WHERE id = ?
+                """, (datetime.now().isoformat(), row['id']))
+
+        # Insert new violations (skip if already exists for this file+type)
         for v in violations:
-            self.db.conn.execute("""
-                INSERT OR IGNORE INTO violations (
-                    file_id, violation_type, severity, description, recommendation, status
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                v['file_id'],
-                v['violation_type'],
-                v['severity'],
-                v['description'],
-                v['recommendation'],
-                'open'
-            ))
+            # Check if this violation already exists as 'open'
+            existing = self.db.conn.execute("""
+                SELECT id FROM violations
+                WHERE file_id = ? AND violation_type = ? AND status = 'open'
+            """, (v['file_id'], v['violation_type'])).fetchone()
+
+            if not existing:
+                # Insert new violation
+                self.db.conn.execute("""
+                    INSERT INTO violations (
+                        file_id, violation_type, severity, description, recommendation, status
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    v['file_id'],
+                    v['violation_type'],
+                    v['severity'],
+                    v['description'],
+                    v['recommendation'],
+                    'open'
+                ))
 
         self.db.conn.commit()
         return violations

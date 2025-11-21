@@ -43,7 +43,7 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
         super.init(database: database)
     }
 
-    /// Fetch all obligations with expectation details (synchronous)
+    /// Fetch all obligations with expectation details (synchronous, required by BaseRepository)
     ///
     /// **Implementation**: Simple JOIN query
     /// - obligation INNER JOIN expectations

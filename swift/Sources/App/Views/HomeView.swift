@@ -48,7 +48,7 @@ public struct HomeView: View {
 
     // MARK: - Constants
 
-    private let heroHeight: CGFloat = 300
+    private let heroHeight: CGFloat = 380  // Increased from 300 to match Calm's ~50% ratio
 
     // MARK: - Services
 
@@ -114,12 +114,9 @@ public struct HomeView: View {
                     }
 
                     // Content sections (scroll over hero)
-                    VStack(spacing: 24) {
+                    VStack(spacing: 32) {
                         // Active Goals Section
                         activeGoalsSection
-
-                        // Quick Action Button
-                        quickActionButton
 
                         // Recent Actions Section
                         recentActionsSection
@@ -136,6 +133,16 @@ public struct HomeView: View {
                 .toolbar {
                     homeToolbarItems
                 }
+                .sheet(isPresented: $showingLogAction) {
+                    NavigationStack {
+                        ActionFormView()
+                    }
+                }
+                .sheet(item: $actionToEdit) { actionData in
+                    NavigationStack {
+                        ActionFormView(actionToEdit: actionData)
+                    }
+                }
             }  // NavigationContainer
         }  // NavigationStack
     }
@@ -150,7 +157,7 @@ public struct HomeView: View {
         if let suggestedImage = greetingData?.suggestedHeroImage {
             // Validate it exists in our catalog
             let availableImages = [
-                "Aurora2", "Aurora3", "AuroraAndCarLights", "BackyardTree",
+                "Aurora2", "Aurora3", "AuroraAndCarLights",
                 "BigLakeMountains", "ChicagoRoses", "FamilyHike", "Forest",
                 "Moody", "Mountains4",
             ]
@@ -172,7 +179,7 @@ public struct HomeView: View {
         case 17..<20:
             return "Moody"  // Evening (moody sunset)
         default:
-            return "BackyardTree"  // Night (night lights)
+            return "BigLakeMountains"
         }
     }
 
@@ -247,22 +254,7 @@ public struct HomeView: View {
     // MARK: - Sections
 
     private var activeGoalsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Active Goals")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Button(action: {}) {
-                    Text("See All")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 20)
-
+        Section {
             // Horizontal carousel (real data from DataStore)
             if dataStore.activeGoals.isEmpty {
                 Text("No active goals yet")
@@ -282,48 +274,28 @@ public struct HomeView: View {
                     .padding(.horizontal, 20)
                 }
             }
-        }
-    }
-
-    private var quickActionButton: some View {
-        Button {
-            showingLogAction = true
-        } label: {
+        } header: {
             HStack {
-                Image(systemName: "plus.circle.fill")
-                    .imageScale(.large)
-                Text("Log an Action")
-                    .font(.headline)
+                Text("Active Goals")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Button(action: {}) {
+                    Text("See All")
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.accentColor)
-            .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 4)
         }
-        .padding(.horizontal, 20)
-        .sheet(isPresented: $showingLogAction) {
-            NavigationStack {
-                ActionFormView()
-            }
-        }
-        // NO onDismiss needed - DataStore updates automatically!
-        .sheet(item: $actionToEdit) { actionData in
-            NavigationStack {
-                ActionFormView(actionToEdit: actionData)
-            }
-        }
-        // NO onDismiss needed - DataStore updates automatically!
     }
 
     private var recentActionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Section header
-            Text("Recent Actions")
-                .font(.headline)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 20)
-
+        Section {
             // Action list - fully declarative SwiftUI pattern
             if dataStore.actions.isEmpty {
                 // Empty state (iOS 17+ ContentUnavailableView)
@@ -349,6 +321,13 @@ public struct HomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 20)
             }
+        } header: {
+            Text("Recent Actions")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 4)
         }
         .padding(.bottom, 20)
     }
@@ -356,63 +335,12 @@ public struct HomeView: View {
     // MARK: - Real Data Components
 
     private func goalCard(for goalData: GoalData) -> some View {
-        // Calculate real combined progress (time + action)
-        let progress: Double = {
-            // Time-based progress (30% weight)
-            let timeResult = progressService.calculateTimeProgress(
-                startDate: goalData.startDate,
-                targetDate: goalData.targetDate
-            )
-
-            // Action-based progress (70% weight)
-            let goalActions = dataStore.actionsForGoal(goalData.id)
-
-            // Convert to ProgressCalculationService format
-            let actionMeasurements: [ActionWithMeasurements] = goalActions.map { action in
-                ActionWithMeasurements(
-                    id: action.id,
-                    logTime: action.logTime,
-                    measurements: action.measurements.map { measurement in
-                        ActionMeasurement(
-                            measureId: measurement.measureId,
-                            value: measurement.value
-                        )
-                    }
-                )
-            }
-
-            // Convert targets to ProgressCalculationService format
-            let targets: [MeasureTarget] = goalData.measureTargets.map { target in
-                MeasureTarget(
-                    measureId: target.measureId ?? UUID(),
-                    measureTitle: target.measureTitle ?? "",
-                    measureUnit: target.measureUnit ?? "",
-                    targetValue: target.targetValue
-                )
-            }
-
-            let actionResult = progressService.calculateActionProgress(
-                targets: targets,
-                actions: actionMeasurements
-            )
-
-            // Combined: 30% time + 70% action
-            return progressService.calculateCombinedProgress(
-                timeProgress: timeResult.progress,
-                actionProgress: actionResult.progress
-            )
-        }()
-
-        // Format target date
-        let targetDateText: String = {
-            if let targetDate = goalData.targetDate {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .medium
-                return "Target: \(formatter.string(from: targetDate))"
-            } else {
-                return "No target date"
-            }
-        }()
+        // Declarative: Presentation layer handles progress calculation
+        let progress = GoalPresentation.progress(
+            for: goalData,
+            actions: dataStore.actionsForGoal(goalData.id),
+            service: progressService
+        )
 
         return VStack(alignment: .leading, spacing: 12) {
             // Progress ring with automatic vibrancy
@@ -439,7 +367,8 @@ public struct HomeView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
 
-                Text(targetDateText)
+                // Declarative: GoalData computed property handles formatting
+                Text(goalData.formattedTargetDate)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -454,43 +383,9 @@ public struct HomeView: View {
     }
 
     private func actionRow(for actionData: ActionData) -> some View {
-        // Get icon from MeasurePresentation catalog
-        let icon =
-            actionData.measurements.first.map { measurement in
-                MeasurePresentation.icon(for: measurement.measureUnit)
-            } ?? "checkmark.circle.fill"
-
-        // Format measurement display
-        let measurementText: String = {
-            if let firstMeasurement = actionData.measurements.first {
-                let value = Int(firstMeasurement.value)
-                return "\(value) \(firstMeasurement.measureUnit)"
-            }
-            if let duration = actionData.durationMinutes {
-                let hours = Int(duration) / 60
-                let minutes = Int(duration) % 60
-                if hours > 0 {
-                    return "\(hours)h \(minutes)m"
-                } else {
-                    return "\(minutes)m"
-                }
-            }
-            return ""
-        }()
-
-        // Get goal title for badge (semantic information, not decorative)
-        let goalTitle: String? = {
-            if let firstContribution = actionData.contributions.first,
-                let goal = dataStore.goals.first(where: { $0.id == firstContribution.goalId })
-            {
-                return goal.title
-            }
-            return nil
-        }()
-
-        return HStack(spacing: 12) {
-            // Icon with automatic vibrancy
-            Image(systemName: icon)
+        HStack(spacing: 12) {
+            // Icon - declarative via ActionData extension
+            Image(systemName: actionData.icon)
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 40, height: 40)
@@ -506,15 +401,16 @@ public struct HomeView: View {
 
                     Spacer()
 
-                    if !measurementText.isEmpty {
-                        Text(measurementText)
+                    // Measurement - declarative via ActionData extension
+                    if !actionData.formattedMeasurement.isEmpty {
+                        Text(actionData.formattedMeasurement)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                // Goal badge (semantic context)
-                if let goalTitle = goalTitle {
+                // Goal badge - declarative via ActionData method
+                if let goalTitle = actionData.goalTitle(from: dataStore) {
                     HStack(spacing: 4) {
                         Image(systemName: "target")
                             .font(.caption2)
@@ -589,6 +485,18 @@ public struct HomeView: View {
     /// **Actions**: All menu items use type-safe NavigationRoute
     @ToolbarContentBuilder
     private var homeToolbarItems: some ToolbarContent {
+        // Add Action button (persistent, always visible)
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                showingLogAction = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .imageScale(.large)
+                    .foregroundStyle(.blue)
+            }
+        }
+
+        // Menu button
         ToolbarItem(placement: .automatic) {
             Menu {
                 Button {

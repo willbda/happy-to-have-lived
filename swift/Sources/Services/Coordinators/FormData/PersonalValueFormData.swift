@@ -40,4 +40,41 @@ public struct PersonalValueFormData: Sendable {
         self.lifeDomain = lifeDomain
         self.alignmentGuidance = alignmentGuidance
     }
+
+    /// Initialize form data from existing PersonalValueData (for editing)
+    ///
+    /// Maps all fields from PersonalValueData back to editable form structure.
+    /// Used when user taps "Edit" on an existing personal value.
+    ///
+    /// **Pattern**: PersonalValueData (display) → PersonalValueFormData (editing) → DataStore.updateValue()
+    ///
+    /// **Usage**:
+    /// ```swift
+    /// struct PersonalValuesFormView: View {
+    ///     let valueToEdit: PersonalValueData?
+    ///     @State private var formData: PersonalValueFormData
+    ///
+    ///     init(valueToEdit: PersonalValueData? = nil) {
+    ///         if let value = valueToEdit {
+    ///             _formData = State(initialValue: PersonalValueFormData(from: value))
+    ///         } else {
+    ///             _formData = State(initialValue: PersonalValueFormData(
+    ///                 title: "",
+    ///                 valueLevel: .general
+    ///             ))
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    public init(from valueData: PersonalValueData) {
+        self.title = valueData.title
+        self.detailedDescription = valueData.detailedDescription
+        self.freeformNotes = valueData.freeformNotes
+        self.priority = valueData.priority
+        self.lifeDomain = valueData.lifeDomain
+        self.alignmentGuidance = valueData.alignmentGuidance
+
+        // Parse valueLevel string back to enum
+        self.valueLevel = ValueLevel(rawValue: valueData.valueLevel) ?? .general
+    }
 }

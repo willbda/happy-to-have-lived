@@ -161,3 +161,53 @@ public struct MeasurementInput: Identifiable, Sendable {
         self.value = value
     }
 }
+
+// MARK: - ActionFormData Initializer from ActionData
+
+extension ActionFormData {
+    /// Initialize form data from existing ActionData (for editing)
+    ///
+    /// Maps all fields from ActionData back to editable form structure.
+    /// Used when user taps "Edit" on an existing action.
+    ///
+    /// **Pattern**: ActionData (display) → ActionFormData (editing) → DataStore.updateAction()
+    ///
+    /// **Usage**:
+    /// ```swift
+    /// struct ActionFormView: View {
+    ///     let actionToEdit: ActionData?
+    ///     @State private var formData: ActionFormData
+    ///
+    ///     init(actionToEdit: ActionData? = nil) {
+    ///         if let action = actionToEdit {
+    ///             _formData = State(initialValue: ActionFormData(from: action))
+    ///         } else {
+    ///             _formData = State(initialValue: ActionFormData())
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    public init(from actionData: ActionData) {
+        // Core fields
+        self.title = actionData.title ?? ""
+        self.detailedDescription = actionData.detailedDescription ?? ""
+        self.freeformNotes = actionData.freeformNotes ?? ""
+        self.durationMinutes = actionData.durationMinutes ?? 0
+        self.startTime = actionData.startTime ?? actionData.logTime
+
+        // Map measurements (ActionData.Measurement → MeasurementInput)
+        self.measurements = actionData.measurements.map { measurement in
+            MeasurementInput(
+                id: measurement.id,
+                measureId: measurement.measureId,
+                unit: nil,  // Existing measure, no new unit needed
+                measureType: nil,
+                measureTitle: nil,
+                value: measurement.value
+            )
+        }
+
+        // Map goal contributions (ActionData.Contribution → Set<UUID>)
+        self.goalContributions = Set(actionData.contributions.map { $0.goalId })
+    }
+}

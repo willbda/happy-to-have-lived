@@ -52,4 +52,53 @@ public struct TimePeriodFormData: Sendable {
         self.reflection = reflection
         self.status = status
     }
+
+    /// Initialize form data from existing TimePeriodData (for editing)
+    ///
+    /// Maps all fields from TimePeriodData back to editable form structure.
+    /// Used when user taps "Edit" on an existing term/time period.
+    ///
+    /// **Pattern**: TimePeriodData (display) → TimePeriodFormData (editing) → DataStore.updateTerm()
+    ///
+    /// **Usage**:
+    /// ```swift
+    /// struct TermFormView: View {
+    ///     let termToEdit: TimePeriodData?
+    ///     @State private var formData: TimePeriodFormData
+    ///
+    ///     init(termToEdit: TimePeriodData? = nil) {
+    ///         if let term = termToEdit {
+    ///             _formData = State(initialValue: TimePeriodFormData(from: term))
+    ///         } else {
+    ///             _formData = State(initialValue: TimePeriodFormData(
+    ///                 startDate: Date(),
+    ///                 targetDate: Date().addingTimeInterval(70 * 24 * 60 * 60),
+    ///                 specialization: .term(number: 1)
+    ///             ))
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    public init(from periodData: TimePeriodData) {
+        // TimePeriod fields
+        self.title = periodData.timePeriodTitle
+        self.detailedDescription = nil  // Not stored in TimePeriodData
+        self.freeformNotes = nil        // Not stored in TimePeriodData
+        self.startDate = periodData.startDate
+        self.targetDate = periodData.endDate
+
+        // GoalTerm fields
+        self.theme = periodData.theme
+        self.reflection = periodData.reflection
+
+        // Parse status string back to enum
+        if let statusString = periodData.status {
+            self.status = TermStatus(rawValue: statusString)
+        } else {
+            self.status = nil
+        }
+
+        // Reconstruct specialization from termNumber
+        self.specialization = .term(number: periodData.termNumber)
+    }
 }

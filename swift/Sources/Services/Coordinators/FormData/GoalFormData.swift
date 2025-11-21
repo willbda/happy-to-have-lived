@@ -76,4 +76,67 @@ public struct GoalFormData: ExpectationFormDataBase, Sendable {
         self.valueAlignments = valueAlignments
         self.termId = termId
     }
+
+    /// Initialize form data from existing GoalData (for editing)
+    ///
+    /// Maps all fields from GoalData back to editable form structure.
+    /// Used when user taps "Edit" on an existing goal.
+    ///
+    /// **Pattern**: GoalData (display) → GoalFormData (editing) → DataStore.updateGoal()
+    ///
+    /// **Usage**:
+    /// ```swift
+    /// struct GoalFormView: View {
+    ///     let goalToEdit: GoalData?
+    ///     @State private var formData: GoalFormData
+    ///
+    ///     init(goalToEdit: GoalData? = nil) {
+    ///         if let goal = goalToEdit {
+    ///             _formData = State(initialValue: GoalFormData(from: goal))
+    ///         } else {
+    ///             _formData = State(initialValue: GoalFormData())
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    public init(from goalData: GoalData) {
+        // Expectation fields
+        self.title = goalData.title ?? ""
+        self.detailedDescription = goalData.detailedDescription ?? ""
+        self.freeformNotes = goalData.freeformNotes ?? ""
+        self.expectationImportance = goalData.expectationImportance
+        self.expectationUrgency = goalData.expectationUrgency
+
+        // Goal fields
+        self.startDate = goalData.startDate
+        self.targetDate = goalData.targetDate
+        self.actionPlan = goalData.actionPlan
+        self.expectedTermLength = goalData.expectedTermLength
+
+        // Map measure targets (GoalData.MeasureTarget → ExpectationMeasureFormData)
+        self.measureTargets = goalData.measureTargets.map { target in
+            ExpectationMeasureFormData(
+                id: target.id,
+                measureId: target.measureId,
+                unit: nil,  // Existing measure, no new unit needed
+                measureType: nil,
+                measureTitle: nil,
+                targetValue: target.targetValue,
+                notes: target.freeformNotes
+            )
+        }
+
+        // Map value alignments (GoalData.ValueAlignment → ValueAlignmentInput)
+        self.valueAlignments = goalData.valueAlignments.map { alignment in
+            ValueAlignmentInput(
+                id: alignment.id,
+                valueId: alignment.valueId,
+                alignmentStrength: alignment.alignmentStrength ?? 5,
+                relevanceNotes: alignment.relevanceNotes
+            )
+        }
+
+        // Map term assignment (optional)
+        self.termId = goalData.termAssignment?.termId
+    }
 }

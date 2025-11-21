@@ -1,16 +1,16 @@
 # Architecture Documentation Summary
 
-Generated: 2025-11-20 20:12:35
-Scan ID: 17
+Generated: 2025-11-20 20:52:28
+Scan ID: 18
 Branch: main
-Commit: df7684d4
+Commit: 3a5a1ff7
 
 ## Overview
 
 - **Total Files**: 160
-- **Total Lines**: 32,221
+- **Total Lines**: 32,251
 - **Files Scanned**: 160
-- **Changes**: 0 created, 5 modified, 3 deleted
+- **Changes**: 0 created, 6 modified, 0 deleted
 
 ## Files by Layer
 
@@ -23,7 +23,7 @@ Commit: df7684d4
 - **View-Component**: 7 files (avg 162 lines)
 - **View-Row**: 6 files (avg 87 lines)
 - **View-List**: 6 files (avg 157 lines)
-- **View-Form**: 6 files (avg 185 lines)
+- **View-Form**: 6 files (avg 188 lines)
 - **Service-HealthKit**: 6 files (avg 290 lines)
 - **Model-DataType**: 6 files (avg 185 lines)
 - **Model-Abstraction**: 6 files (avg 131 lines)
@@ -49,7 +49,7 @@ Commit: df7684d4
 - **View-LLM**: 1 files (avg 161 lines)
 - **View-Dashboard**: 1 files (avg 126 lines)
 - **Extension**: 1 files (avg 97 lines)
-- **DataStore**: 1 files (avg 652 lines)
+- **DataStore**: 1 files (avg 670 lines)
 
 ## Files by Domain
 
@@ -79,4 +79,4 @@ Commit: df7684d4
 
 - **created**: 178 files
 - **deleted**: 18 files
-- **modified**: 230 files
+- **modified**: 236 files

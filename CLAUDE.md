@@ -12,7 +12,54 @@ Do not run swift build without explicitely asking the user. It is inefficient, w
 - **Platforms**: iOS 26+, macOS 26+, visionOS 26+
 - **Database**: SQLite with SQLiteData ORM
 - **Architecture**: Three-layer domain model with coordinators and repositories
-- **Current Version**: 0.6.0 (Check `version.txt` for latest)
+- **Current Version**: 0.7.0 (Check `version.txt` for latest)
+
+## Essential Commands
+
+### Building and Running
+
+```bash
+# Open Xcode project (recommended for development)
+open swift/HappyToHaveLived/HappyToHaveLived.xcodeproj
+
+# Build from command line (only when explicitly requested)
+# Note: Avoid premature builds during multi-file changes
+cd swift/HappyToHaveLived
+xcodebuild -scheme "Happy to Have Lived" -destination 'platform=macOS'
+
+# Run tests (Swift Testing framework)
+swift test
+
+# Run specific test suite
+swift test --filter "PersonalValueValidationTests"
+```
+
+### Database Management
+
+```bash
+# Database location (for inspection/debugging)
+# macOS:
+~/Library/Containers/com.willbda.happytohavelived/Data/Library/Application Support/GoalTracker/application_data.db
+
+# Inspect schema
+sqlite3 ~/Library/Containers/com.willbda.happytohavelived/Data/Library/Application\ Support/GoalTracker/application_data.db ".schema"
+
+# Schema source of truth
+cat swift/Sources/Database/Schemas/schema_current.sql
+```
+
+### Testing
+
+```bash
+# Run all tests
+swift test
+
+# Run specific test file
+swift test --filter CoordinatorValidationTests
+
+# Run tests in Xcode with UI (for debugging)
+# Cmd+U in Xcode after opening HappyToHaveLived.xcodeproj
+```
 
 
 
@@ -82,9 +129,18 @@ The database uses 3NF normalization with three conceptual layers:
 - ✅ Phase 4: Validation layer integration
 - ✅ Phase 5: Repository + ViewModel pattern (completed 2025-11-13)
 - ✅ Phase 6: Coordinator composition + Semantic services (completed 2025-11-17)
-- ⏳ Phase 7: LLM Tool Integration + Dashboard features
+- ✅ Phase 7: DataStore migration (completed 2025-11-20)
+- ⏳ Phase 8: LLM Tool Integration + Dashboard features
 
-### Recent Completions (2025-11-17)
+### Recent Completions (2025-11-20)
+- ✅ **DataStore Pattern Migration** - Replaced individual ViewModels with centralized @Observable store
+  - Single source of truth for all app data (goals, actions, values, terms)
+  - Environment-based injection following Apple's AddRichGraphicsToYourSwiftUIApp pattern
+  - Automatic state propagation eliminates manual refresh calls
+  - Simpler testing (one store vs 8 separate ViewModels)
+  - All list/form views now use DataStore via @Environment
+
+### Previous Completions (2025-11-17)
 - ✅ **Measure Coordinator Composition** - Single source of truth for all measure creation
   - MeasureCoordinator.getOrCreate() idempotent pattern
   - GoalCoordinator and ActionCoordinator use coordinator composition
@@ -222,78 +278,91 @@ let entity = try await coordinator.create(from: formData)
 try validator.validateComplete(entity)
 ```
 
-### List ViewModel Pattern (Current Standard - 2025-11-13)
+### DataStore Pattern (Current Standard - 2025-11-20)
 
-**ALL list views now use the Repository + @Observable ViewModel pattern.**
+**ALL views now use centralized DataStore via @Environment.**
+
+**Architecture**: Single @Observable store holds all app data, following Apple's pattern from AddRichGraphicsToYourSwiftUIApp.
 
 ```swift
-// PATTERN: List ViewModel with Repository
+// PATTERN: Centralized DataStore
 @Observable
 @MainActor
-public final class GoalsListViewModel {
-    // Observable state (internal - no visibility modifier needed)
-    // Properties accessed only by corresponding view
-    var goals: [GoalWithDetails] = []
-    var isLoading: Bool = false
-    var errorMessage: String?
+public final class DataStore {
+    // Observable state (all app data)
+    public var goals: [GoalData] = []
+    public var actions: [ActionData] = []
+    public var values: [PersonalValueData] = []
+    public var terms: [TimePeriodData] = []
 
-    var hasError: Bool { errorMessage != nil }
+    public var isLoading: Bool = false
+    public var errorMessage: String?
 
-    // Dependencies (not observable)
+    // Repositories (not observable)
     @ObservationIgnored
-    @Dependency(\.defaultDatabase) private var database
-
-    @ObservationIgnored
-    private lazy var repository: GoalRepository = {
+    private lazy var goalRepository: GoalRepository = {
         GoalRepository(database: database)
     }()
 
-    public init() {}
-
-    // Standard methods (public - called by views)
+    // CRUD operations
     public func loadGoals() async {
         isLoading = true
-        errorMessage = nil
+        defer { isLoading = false }
 
         do {
-            goals = try await repository.fetchAll()
-        } catch let error as ValidationError {
-            // User-friendly validation messages (e.g., "Goal title is required")
-            errorMessage = error.userMessage
+            goals = try await goalRepository.fetchAll()
         } catch {
-            // Generic fallback for unexpected errors
             errorMessage = "Failed to load goals: \(error.localizedDescription)"
         }
-
-        isLoading = false
     }
 
-    public func deleteGoal(_ goal: GoalWithDetails) async {
-        // Uses coordinator for delete, then reloads
-        // Same ValidationError handling pattern
+    public func createGoal(from formData: GoalFormData) async throws -> GoalData {
+        let coordinator = GoalCoordinator(database: database)
+        let goal = try await coordinator.create(from: formData)
+        await loadGoals()  // Refresh after write
+        return goal
+    }
+}
+
+// In App:
+@main
+struct HappyToHaveLivedApp: App {
+    @State private var dataStore = DataStore()
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environment(dataStore)  // Inject into environment
+        }
     }
 }
 
 // In View:
-@State private var viewModel = GoalsListViewModel()
+struct GoalsListView: View {
+    @Environment(DataStore.self) var dataStore
 
-.task {
-    await viewModel.loadGoals()
-}
-.refreshable {
-    await viewModel.loadGoals()
+    var body: some View {
+        List {
+            ForEach(dataStore.goals) { goal in
+                GoalRow(goal: goal)
+            }
+        }
+        .task {
+            await dataStore.loadGoals()
+        }
+    }
 }
 ```
 
 **Why This Pattern:**
-- ✅ No @Fetch wrappers needed
-- ✅ Explicit async/await
-- ✅ Better separation of concerns
-- ✅ Easier testing
-- ✅ Loading and error states built-in
-- ✅ @Observable provides automatic UI updates
+- ✅ Single source of truth (no separate list/form ViewModels)
+- ✅ Automatic state propagation (no manual refresh calls)
+- ✅ Truly declarative (SwiftUI reacts to DataStore changes)
+- ✅ Simpler testing (one store vs 8 ViewModels)
+- ✅ Follows Apple's modern @Observable + @Environment pattern
+- ✅ Environment injection enables previews and testing
 
-**Reference**: All 4 list views (Goals, Actions, PersonalValues, Terms) follow this pattern.
+**Migration from ViewModels**: The project evolved from individual ViewModels (GoalsListViewModel, ActionFormViewModel, etc.) to centralized DataStore on 2025-11-20. Old ViewModel pattern docs preserved below for reference.
 
 ### Repository Query Patterns
 
@@ -346,11 +415,45 @@ public struct Goal: DomainBasic {
 
 ## Important Files and Locations
 
-- **Database Schema**: `swift/Sources/Database/Schemas/schema_current.sql`
-- **Package Definition**: `swift/Package.swift`
+### Core Architecture Files
+- **Database Schema**: `swift/Sources/Database/Schemas/schema_current.sql` - Source of truth for database structure
+- **DataStore**: `swift/Sources/App/DataStore.swift` - Centralized @Observable store for all app data
+- **Package Definition**: `swift/Package.swift` - Swift Package Manager configuration
+- **Xcode Project**: `swift/HappyToHaveLived/HappyToHaveLived.xcodeproj` - Main development project
+
+### Documentation
 - **Migration Plan**: `swift/docs/JSON_AGGREGATION_MIGRATION_PLAN.md` ✅ Complete
-- **Visual Design System**: `swift/docs/LIQUID_GLASS_VISUAL_SYSTEM.md`
-- **Concurrency Migration**: `swift/docs/CONCURRENCY_MIGRATION_20251110.md`
+- **Visual Design System**: `swift/docs/LIQUID_GLASS_VISUAL_SYSTEM.md` - Liquid Glass implementation guide
+- **Concurrency Migration**: `swift/docs/CONCURRENCY_MIGRATION_20251110.md` - Swift 6 concurrency patterns
+- **Architecture Summary**: `ProjectManagement/ARCHITECTURE_SUMMARY_LATEST.md` - Auto-generated file metrics
+
+### Key Directories
+```
+swift/
+├── Sources/
+│   ├── Models/                    # Domain models (Abstractions/Basics/Composits)
+│   ├── Database/                  # Schema, Bootstrap, SyncConfiguration
+│   ├── Services/                  # Business logic layer
+│   │   ├── Coordinators/          # Multi-model atomic writes
+│   │   ├── Validation/            # Business rule enforcement
+│   │   ├── Repositories/          # Query abstraction (JSON agg, #sql, Query Builder)
+│   │   ├── HealthKit/             # Apple Health integration
+│   │   ├── Semantic/              # Embedding generation, similarity search
+│   │   ├── FoundationModels/      # LLM tools (scaffolded, not integrated)
+│   │   └── ImportExport/          # CSV import/export, data transformation
+│   └── App/                       # SwiftUI application layer
+│       ├── DataStore.swift        # ⭐ Central @Observable store (single source of truth)
+│       ├── ViewModels/            # Deprecated (migrated to DataStore 2025-11-20)
+│       └── Views/                 # SwiftUI views
+│           ├── FormViews/         # Entity creation/editing forms
+│           ├── ListViews/         # Entity list displays
+│           ├── Components/        # Reusable form components
+│           └── Templates/         # Layout templates
+├── HappyToHaveLived/
+│   ├── HappyToHaveLived.xcodeproj # Xcode project
+│   └── Happy to Have Lived Tests/ # Swift Testing test suite
+└── Package.swift                  # SPM package manifest
+```
 
 ## Development Guidelines
 
@@ -439,12 +542,18 @@ goals.append(goal)
 
 1. Create model in appropriate layer (`Abstractions/`, `Basics/`, or `Composits/`)
 2. Add @Table and @Column attributes for SQLiteData
-3. Create FormData structure in `Services/Coordinators/FormData/`
-4. Implement Coordinator in `Services/Coordinators/` (**MUST be `Sendable`, NO `@MainActor`**)
-5. Implement Validator in `Services/Validation/`
-6. Create Repository in `Services/Repositories/` (when pattern is complete)
-7. Add database migration if schema changes
-8. Write tests for coordinator and validator
+3. Update database schema in `swift/Sources/Database/Schemas/schema_current.sql`
+4. Create FormData structure in `Services/Coordinators/FormData/`
+5. Implement Coordinator in `Services/Coordinators/` (**MUST be `Sendable`, NO `@MainActor`**)
+6. Implement Validator in `Services/Validation/`
+7. Create Repository in `Services/Repositories/`
+8. **Add to DataStore**:
+   - Add property: `public var myEntities: [MyEntityData] = []`
+   - Add repository: `@ObservationIgnored private lazy var myEntityRepository = MyEntityRepository(database: database)`
+   - Add load method: `public func loadMyEntities() async { ... }`
+   - Add CRUD methods: `createMyEntity()`, `updateMyEntity()`, `deleteMyEntity()`
+9. Write tests using Swift Testing framework (`@Test`, `@Suite`)
+10. Update views to use DataStore via `@Environment(DataStore.self)`
 
 ### Creating a New Coordinator (Swift 6 Pattern)
 
@@ -476,113 +585,82 @@ public final class MyEntityCoordinator: Sendable {
 - ✅ Only `private let` properties (immutable state)
 - ✅ All public methods must be `async throws`
 
-### Creating a New ViewModel (Swift 6 Pattern)
+### Writing Tests (Swift Testing Framework)
 
-**Form ViewModel Template** (based on ActionFormViewModel):
+**Test Pattern** (from CoordinatorValidationTests.swift):
 ```swift
-@Observable
-@MainActor
-public final class MyEntityFormViewModel {
-    // UI state properties (auto-tracked by @Observable)
-    var isSaving: Bool = false
-    var errorMessage: String?
+import Foundation
+import Testing
+@testable import Models
+@testable import Services
 
-    // Dependencies (mark with @ObservationIgnored)
-    @ObservationIgnored
-    @Dependency(\.defaultDatabase) var database
+// Use @Suite to group related tests
+@Suite("MyEntity Validation")
+struct MyEntityValidationTests {
 
-    // Coordinator (lazy var with @ObservationIgnored)
-    @ObservationIgnored
-    private lazy var coordinator: MyEntityCoordinator = {
-        MyEntityCoordinator(database: database)
-    }()
+    // Use @Test attribute with descriptive name
+    @Test("Accepts valid entity data")
+    func acceptsValidEntity() throws {
+        let formData = MyEntityFormData(
+            title: "Valid Title",
+            description: "Valid description"
+        )
 
-    public init() {}
+        // Should NOT throw
+        try MyEntityValidation.validateFormData(formData)
+    }
 
-    public func save(from formData: MyEntityFormData) async throws -> MyEntity {
-        isSaving = true  // ← Main actor
-        defer { isSaving = false }
+    @Test("Rejects entity with empty title")
+    func rejectsEmptyTitle() throws {
+        let formData = MyEntityFormData(
+            title: "",
+            description: "Valid description"
+        )
 
-        // This automatically switches to background, then back to main
-        let entity = try await coordinator.create(from: formData)
-        errorMessage = nil
-        return entity
+        // Use #expect to assert expected behavior
+        #expect(throws: ValidationError.self) {
+            try MyEntityValidation.validateFormData(formData)
+        }
+    }
+
+    @Test("Validates range constraints")
+    func validatesRangeConstraints() throws {
+        let formData = MyEntityFormData(
+            title: "Valid",
+            priority: 15  // Assume valid range is 1-10
+        )
+
+        #expect(throws: ValidationError.self) {
+            try MyEntityValidation.validateFormData(formData)
+        }
     }
 }
 ```
 
-**List ViewModel Template** (based on GoalsListViewModel):
-```swift
-@Observable
-@MainActor
-public final class MyEntitiesListViewModel {
-    // Observable state (internal, not public - no visibility modifier needed)
-    var items: [MyEntity] = []
-    var isLoading: Bool = false
-    var errorMessage: String?
+**Running Tests**:
+```bash
+# Run all tests
+swift test
 
-    var hasError: Bool { errorMessage != nil }
+# Run specific suite
+swift test --filter "MyEntityValidationTests"
 
-    // Dependencies (not observable)
-    @ObservationIgnored
-    @Dependency(\.defaultDatabase) private var database
+# Run single test
+swift test --filter "MyEntityValidationTests/acceptsValidEntity"
 
-    @ObservationIgnored
-    private lazy var repository: MyEntityRepository = {
-        MyEntityRepository(database: database)
-    }()
-
-    public init() {}
-
-    public func loadItems() async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            items = try await repository.fetchAll()
-        } catch let error as ValidationError {
-            // User-friendly validation messages
-            errorMessage = error.userMessage
-            print("❌ MyEntitiesListViewModel ValidationError: \(error.userMessage)")
-        } catch {
-            // Generic error fallback
-            errorMessage = "Failed to load items: \(error.localizedDescription)"
-            print("❌ MyEntitiesListViewModel: \(error)")
-        }
-
-        isLoading = false
-    }
-
-    public func deleteItem(_ item: MyEntity) async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            let coordinator = MyEntityCoordinator(database: database)
-            try await coordinator.delete(item: item)
-            await loadItems()
-        } catch let error as ValidationError {
-            // User-friendly validation messages
-            errorMessage = error.userMessage
-            print("❌ MyEntitiesListViewModel ValidationError: \(error.userMessage)")
-        } catch {
-            // Generic error fallback
-            errorMessage = "Failed to delete item: \(error.localizedDescription)"
-            print("❌ MyEntitiesListViewModel: \(error)")
-        }
-
-        isLoading = false
-    }
-}
+# Run in Xcode with UI (Cmd+U)
+open swift/HappyToHaveLived/HappyToHaveLived.xcodeproj
 ```
 
-**Key Requirements**:
-- ✅ Mark `@Observable` (modern pattern, NOT ObservableObject)
-- ✅ Mark `@MainActor` (UI state management)
-- ✅ Use `@State` in views (NOT `@StateObject`)
-- ✅ Mark dependencies with `@ObservationIgnored`
-- ✅ Use lazy repository/coordinator with `@ObservationIgnored`
-- ✅ Internal properties (not public)
+**Test Coverage Areas**:
+- Coordinator validation (two-phase pattern)
+- Business rule enforcement
+- Schema validation
+- Query performance (N+1 detection)
+
+**Legacy ViewModel Pattern** (deprecated 2025-11-20, replaced by DataStore):
+
+The project previously used individual ViewModels (GoalsListViewModel, ActionFormViewModel, etc.). These have been replaced by centralized DataStore. If you encounter old ViewModel code, migrate to DataStore pattern using `@Environment(DataStore.self)`.
 
 
 ## Documentation Research with doc-fetcher
@@ -912,59 +990,78 @@ public struct ActionWithDetails: Identifiable, Hashable, Sendable {
 - Concurrency Migration: `swift/docs/CONCURRENCY_MIGRATION_20251110.md`
 - @Observable macro docs: Use doc-fetcher to fetch latest Apple documentation
 
-#### 3. Database Queries - Repository + ViewModel Pattern (Current Standard)
+#### 3. Database Queries - DataStore + Repository Pattern (Current Standard)
 
-**CURRENT PATTERN** (as of 2025-11-13):
-All list views use Repository + @Observable ViewModel pattern. **No @Fetch wrappers.**
+**CURRENT PATTERN** (as of 2025-11-20):
+All views access data through centralized DataStore. **No individual ViewModels.**
 
 ```swift
 // In Repository: JSON Aggregation, #sql, or Query Builder
 public final class GoalRepository: Sendable {
-    public func fetchAll() async throws -> [GoalWithDetails] {
+    public func fetchAll() async throws -> [GoalData] {
         try await database.read { db in
             // JSON aggregation SQL here
             let rows = try GoalQueryRow.fetchAll(db, sql: sql)
             return try rows.map { row in
-                try assembleGoalWithDetails(from: row)
+                try assembleGoalData(from: row)
             }
         }
     }
 }
 
-// In ViewModel: Lazy repository access
+// In DataStore: Centralized data access
 @Observable
 @MainActor
-public final class GoalsListViewModel {
-    var goals: [GoalWithDetails] = []
+public final class DataStore {
+    public var goals: [GoalData] = []
 
     @ObservationIgnored
-    private lazy var repository: GoalRepository = {
+    private lazy var goalRepository: GoalRepository = {
         GoalRepository(database: database)
     }()
 
     public func loadGoals() async {
-        goals = try await repository.fetchAll()
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            goals = try await goalRepository.fetchAll()
+        } catch {
+            errorMessage = "Failed to load goals: \(error.localizedDescription)"
+        }
     }
 }
 
-// In View: @State with .task
-@State private var viewModel = GoalsListViewModel()
+// In View: Access via @Environment
+struct GoalsListView: View {
+    @Environment(DataStore.self) var dataStore
 
-.task {
-    await viewModel.loadGoals()
+    var body: some View {
+        List {
+            ForEach(dataStore.goals) { goal in
+                GoalRow(goal: goal)
+            }
+        }
+        .task {
+            await dataStore.loadGoals()
+        }
+    }
 }
 ```
 
 **Why This Pattern:**
-- ✅ Explicit data flow (clear where data comes from)
-- ✅ Loading/error states built-in
-- ✅ Testable (mock repository)
-- ✅ @Observable provides automatic updates
-- ✅ No wrapper abstraction layer
+- ✅ Single source of truth (not per-view ViewModels)
+- ✅ Automatic state propagation across all views
+- ✅ Environment injection enables testing/previews
+- ✅ @Observable provides automatic UI updates
+- ✅ Follows Apple's modern pattern (AddRichGraphicsToYourSwiftUIApp)
 
 **Anti-Patterns to Avoid**:
 ```swift
-// ❌ DON'T use @Fetch wrappers (eliminated in migration)
+// ❌ DON'T create individual ViewModels (deprecated pattern)
+@State private var viewModel = GoalsListViewModel()  // Old pattern
+
+// ❌ DON'T use @Fetch wrappers (never implemented in this project)
 @Fetch(wrappedValue: [], ActionsQuery())
 private var actions: [ActionWithDetails]
 

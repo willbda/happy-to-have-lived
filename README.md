@@ -57,7 +57,7 @@ See [LIQUID_GLASS_VISUAL_SYSTEM.md](swift/docs/LIQUID_GLASS_VISUAL_SYSTEM.md) fo
 - **Language**: Swift 6.2 with strict concurrency
 - **UI Framework**: SwiftUI with Observation framework
 - **Database**: SQLite with SQLiteData ORM
-- **Architecture**: Coordinator pattern for writes, Repository pattern for reads
+- **Architecture**: DataStore pattern (centralized @Observable store), Coordinator pattern for writes, Repository pattern for reads
 - **Dependencies**: Point-Free libraries (SQLiteData, Dependencies, StructuredQueries)
 
 ## Project Structure
@@ -66,15 +66,20 @@ See [LIQUID_GLASS_VISUAL_SYSTEM.md](swift/docs/LIQUID_GLASS_VISUAL_SYSTEM.md) fo
 swift/
 ├── Sources/
 │   ├── Models/           # Domain models (3 layers)
+│   ├── Database/         # Schema, Bootstrap, SyncConfiguration
 │   ├── Services/         # Business logic and data access
 │   │   ├── Coordinators/ # Multi-model atomic writes
 │   │   ├── Validation/   # Business rule enforcement
-│   │   └── Repositories/ # Query abstraction (✅ complete)
-│   ├── App/              # SwiftUI views and view models
-│   │   ├── ViewModels/   # @Observable ViewModels (✅ complete)
-│   │   └── Views/        # SwiftUI views
-│   └── Logic/            # LLM integration (future)
-├── Tests/                # Comprehensive test suite
+│   │   ├── Repositories/ # Query abstraction (✅ complete)
+│   │   ├── HealthKit/    # Apple Health integration
+│   │   ├── Semantic/     # Embedding generation (scaffolded)
+│   │   └── ImportExport/ # CSV import/export
+│   └── App/              # SwiftUI application layer
+│       ├── DataStore.swift   # ⭐ Centralized @Observable store (v0.7.0)
+│       └── Views/            # SwiftUI views
+├── HappyToHaveLived/
+│   ├── HappyToHaveLived.xcodeproj
+│   └── Happy to Have Lived Tests/  # Swift Testing test suite
 └── Package.swift         # Swift Package Manager configuration
 ```
 
@@ -111,25 +116,28 @@ The app uses a SQLite database with a 3NF normalized schema. Database location:
 
 ## Features in Development
 
-### Current Phase (v0.6.0)
+### Current Phase (v0.7.0)
 
 ✅ Three-layer domain model
 ✅ Coordinator pattern for atomic writes
-✅ Repository + ViewModel pattern (completed 2025-11-13)
+✅ Repository pattern with JSON aggregation (completed 2025-11-13)
+✅ DataStore pattern - centralized @Observable store (completed 2025-11-20)
 ✅ Validation layer integration
-✅ CloudKit sync
+✅ CloudKit sync preparation
 ✅ Basic HealthKit integration
+✅ Swift Testing test suite
 
-### Next Phase (v0.7.0)
+### Next Phase (v0.8.0)
 
 🚧 CSV import/export enhancements
-🚧 Testing and refinement
+🚧 Performance optimizations (import workflows)
 ⏳ Dashboard and analytics
 ⏳ Enhanced HealthKit live tracking
 
-### Future Phases
+### Future Phases (v0.9.0+)
 
-⏳ LLM-powered insights
+⏳ LLM-powered insights (on-device via Foundation Models)
+⏳ Semantic search and deduplication
 ⏳ Widgets and complications
 ⏳ Shortcuts and App Intents
 
@@ -146,9 +154,38 @@ See [CLAUDE.md](CLAUDE.md) for addition guidelines meant for Claude.
 
 ## Testing
 
-Like all good projects, this project *should* include tests, comprehensive tests, and so on... I am, however, a hack. I am primarily testing the app by using it in my daily life. It would be better to have a suite of tests because that would, of course and in particular, allow us to know immediately when good things that were working stop working. The design approach saves my butt a little here because we have compile-time checking that includes checks of type safety and protocols.
+The project uses Swift Testing framework for validation and business logic testing.
 
-A reality is that I do not understand the code well enough to *quickly* write relevant tests. I would rather spend my time pushing forward to get the application to do more fun stuff. I am hesitant to vibe code the tests because I do not want the false sense of security that may come from believing I have lots of test coverage if I am, instead, testing uninteresting details that don't pertain to the resiliency of the app. I'm a novice, but I feel like any test should be informative and actionable. 
+### Test Suite
+
+```bash
+# Run all tests
+swift test
+
+# Run specific test suite
+swift test --filter "CoordinatorValidationTests"
+
+# Run in Xcode (Cmd+U)
+open swift/HappyToHaveLived/HappyToHaveLived.xcodeproj
+```
+
+### Current Test Coverage
+
+- ✅ **Coordinator Validation Tests** - Two-phase validation pattern (business rules + referential integrity)
+- ✅ **Business Logic Tests** - MatchingService, query patterns
+- ✅ **Schema Validation Tests** - Database structure compliance
+- ✅ **Query Performance Tests** - N+1 detection, JSON aggregation efficiency
+
+### Testing Philosophy
+
+Tests focus on **informative and actionable** scenarios:
+- Business rule enforcement (validation errors)
+- Data integrity (cascade deletes, foreign keys)
+- Performance patterns (bulk queries vs N+1)
+
+The project also relies heavily on:
+- **Compile-time safety** - Swift 6 strict concurrency, type safety, protocol conformance
+- **Real-world usage** - Daily dogfooding on iOS/macOS devices 
 
 
 ## Documentation
@@ -171,5 +208,5 @@ For questions or feedback, please open an issue in the repository.
 
 ---
 
-**Current Status**: v0.6.0 - Active Development
+**Current Status**: v0.7.0 - Active Development (DataStore pattern complete)
 **Target Release**: v1.0.0 - Winter 2025-26

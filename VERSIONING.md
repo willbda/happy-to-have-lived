@@ -1,8 +1,8 @@
 # Versioning Strategy - Happy to Have Lived
 
-**Current Version:** 0.6.5 (Repository + ViewModel pattern complete - 2025-11-13)
-**Next Release:** 0.7.0 (Testing, refinement, CSV enhancements)
-**Future Release:** 0.7.5 (Semantic foundation + basic LLM integration - pre-launch)
+**Current Version:** 0.7.0 (DataStore pattern complete - 2025-11-20)
+**Next Release:** 0.8.0 (Performance optimizations, CSV enhancements, testing)
+**Future Release:** 0.9.0 (Semantic foundation + LLM integration)
 
 ## Version History
 
@@ -13,9 +13,10 @@
 | 0.3.0 | - | Swift journey begins | Initial Swift project setup |
 | 0.5.0 | 2025-10-25 | Foundation complete, rearchitecture needed | SQLiteData working, protocols defined, but needs structural rethink |
 | 0.6.0 | 2025-11-08 | Coordinator pattern complete | Phases 1-3 done: 3NF schema, models migrated, all 4 coordinators with full CRUD |
-| **0.6.5** | **2025-11-13** | **Repository + ViewModel complete** | All 4 entities migrated to @Observable pattern, repositories with Sendable, query wrappers eliminated |
-| **0.7.0** | **TBD** | **Testing + refinement + canonical types** | Manual/automated testing, CSV enhancements, performance optimizations, bug fixes, **backward compat retirement** (Phases 1-2 complete), **schema cleanup** ([#17](https://github.com/willbda/happy-to-have-lived/issues/17)) |
-| **0.7.5** | **TBD** | **Semantic foundation + basic LLM** | Unified semantic layer for deduplication/search/LLM, conversational goal setting |
+| 0.6.5 | 2025-11-13 | Repository + ViewModel complete | All 4 entities migrated to @Observable pattern, repositories with Sendable, query wrappers eliminated |
+| **0.7.0** | **2025-11-20** | **DataStore pattern complete** | Migrated from individual ViewModels to centralized @Observable store, @Environment injection, single source of truth |
+| **0.8.0** | **TBD** | **Testing + refinement + performance** | Automated testing expansion, CSV enhancements, performance optimizations (import workflows), bug fixes |
+| **0.9.0** | **TBD** | **Semantic foundation + LLM** | Unified semantic layer for deduplication/search/LLM, conversational goal setting, on-device Foundation Models integration |
 
 ## Current Implementation Focus
 
@@ -282,9 +283,9 @@ echo "✓ Version bumped to $NEW_VERSION"
 echo "Run 'git push && git push --tags' to publish"
 ```
 
-## Current Status Summary (Updated 2025-11-16)
+## Current Status Summary (Updated 2025-11-20)
 
-**Swift Implementation:** Phases 1-5 complete (v0.6.5), backward compat Phase 1 complete (v0.7.0 in progress)
+**Swift Implementation:** v0.7.0 complete - DataStore pattern migration
 - ✅ Phase 1: 3NF schema designed and tested
 - ✅ Phase 2: Swift models migrated to SQLiteData
 - ✅ Phase 3: Coordinator pattern complete (ActionCoordinator, GoalCoordinator, PersonalValueCoordinator, TimePeriodCoordinator)
@@ -297,22 +298,22 @@ echo "Run 'git push && git push --tags' to publish"
     - Query Builder: Terms (simple 1:1 JOINs)
   - ✅ All repositories have Sendable conformance (Swift 6 compliant)
   - ✅ GoalCoordinator validation integration (two-phase: validateFormData → validateComplete)
-- ✅ Phase 5: ViewModels refactor (complete 2025-11-13)
-  - ✅ All 4 list ViewModels created (Goals, Actions, PersonalValues, Terms)
-  - ✅ @Observable pattern throughout (no ObservableObject)
-  - ✅ All views use @State (not @StateObject)
-  - ✅ All query wrappers eliminated (Queries/ directory empty)
   - Reference: `swift/docs/JSON_AGGREGATION_MIGRATION_PLAN.md`
-- 🔄 **Backward Compatibility Retirement (v0.7.0 in progress - started 2025-11-16)**
-  - ✅ Phase 1: All views accept canonical types (GoalData, ActionData, PersonalValueData, TimePeriodData)
-  - 🔄 Phase 2: Update coordinators to accept canonical types (in progress)
-  - ⏳ Phase 3: Update LLM tools to use GoalData
-  - ⏳ Phase 4: Remove backward compat extensions (.asValue, .asDetails, .asWithPeriod)
-  - Reference: `swift/BACKWARD_COMPATIBILITY_RETIREMENT_PLAN.md`
-  - **Goal**: Eliminate dual type system (legacy vs canonical), simplify architecture
-  - **Effort**: 6-7 hours total, 2 hours complete
-- ⏳ Phase 6: Views refinement & testing
-- ⏳ Phase 7: Testing & Migration
+- ✅ **Phase 7: DataStore Pattern (complete 2025-11-20)**
+  - ✅ Centralized @Observable store replaces individual ViewModels
+  - ✅ @Environment injection for all views
+  - ✅ Single source of truth for all app data
+  - ✅ Automatic state propagation (no manual refresh calls)
+  - ✅ Follows Apple's AddRichGraphicsToYourSwiftUIApp pattern
+  - Reference: `swift/Sources/App/DataStore.swift`
+- ⏳ Phase 8: Performance optimizations (v0.8.0)
+  - Import workflow batch processing
+  - Indexed lookups for measure/value queries
+  - CSV import/export enhancements
+- ⏳ Phase 9: Semantic layer (v0.9.0)
+  - NLEmbedding integration for similarity search
+  - Deduplication via semantic matching
+  - Foundation Models LLM integration
 - ❌ Design language: Liquid Glass foundation in place, refinement ongoing
 - ❌ Accessibility: Not started (target: before 1.0)
 

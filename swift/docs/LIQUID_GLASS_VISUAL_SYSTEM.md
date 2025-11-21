@@ -491,6 +491,110 @@ struct MorphingToolbar: View {
 
 ## Goal App Specific Designs
 
+### HIG Semantic Materials Pattern (Implemented in HomeView 2025-11-21)
+
+**Core Principle**: Use materials semantically, let automatic vibrancy handle appearance.
+
+```swift
+// ✅ CORRECT: Goal cards with semantic materials
+private func goalCard(for goalData: GoalData) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+        // Progress ring with automatic vibrancy
+        ZStack {
+            Circle()
+                .stroke(.tertiary, lineWidth: 4)  // Semantic color, not hardcoded
+
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(.tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+
+            Text("\(Int(progress * 100))%")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)  // Automatic vibrancy
+        }
+        .frame(width: 60, height: 60)
+
+        // Goal info with automatic vibrancy
+        VStack(alignment: .leading, spacing: 4) {
+            Text(goalData.title ?? "Untitled Goal")
+                .font(.headline)
+                .foregroundStyle(.primary)  // NOT .white - adapts to material
+                .lineLimit(2)
+
+            Text(targetDateText)
+                .font(.caption)
+                .foregroundStyle(.secondary)  // System-managed hierarchy
+        }
+    }
+    .frame(width: 160)
+    .padding()
+    .background(.regularMaterial)  // Semantic material choice
+    .clipShape(RoundedRectangle(cornerRadius: 16))
+}
+
+// ✅ CORRECT: Action rows with semantic fills
+private func actionRow(for actionData: ActionData) -> some View {
+    HStack(spacing: 12) {
+        // Icon with quaternary fill (semantic)
+        Image(systemName: icon)
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .frame(width: 40, height: 40)
+            .background(.quaternary)  // System-managed fill
+            .clipShape(Circle())
+
+        // Content with automatic vibrancy
+        VStack(alignment: .leading, spacing: 4) {
+            Text(actionData.title ?? "Untitled Action")
+                .font(.body)
+                .foregroundStyle(.primary)
+
+            // Goal badge with semantic styling
+            if let goalTitle = goalTitle {
+                HStack(spacing: 4) {
+                    Image(systemName: "target")
+                        .font(.caption2)
+                    Text(goalTitle)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.quaternary)  // Consistent semantic fill
+                .clipShape(Capsule())
+            }
+        }
+
+        Image(systemName: "chevron.right")
+            .font(.caption)
+            .foregroundStyle(.tertiary)  // Hierarchy through semantic colors
+    }
+    .padding(.horizontal, 20)
+    .padding(.vertical, 12)
+    .background(.regularMaterial)  // Primary content material
+    .clipShape(RoundedRectangle(cornerRadius: 12))
+}
+```
+
+**Key Changes from Previous Pattern**:
+
+| Old Pattern (Color-Based) | New Pattern (Semantic) | Why |
+|---------------------------|------------------------|-----|
+| `.foregroundStyle(.white)` | `.foregroundStyle(.primary)` | Adapts to Reduced Transparency |
+| `.background(borderColor.opacity(0.1))` | `.background(.quaternary)` | System-managed fill hierarchy |
+| `.stroke(Color.white, lineWidth: 4)` | `.stroke(.tint, lineWidth: 4)` | Uses accent color system |
+| `.goalCardStyle(color: color)` | `.background(.regularMaterial)` | Semantic material, not decorative color |
+
+**Benefits**:
+- ✅ Automatic adaptation to Reduced Transparency mode
+- ✅ System-managed dark mode transitions
+- ✅ Consistent with system apps (Messages, Reminders, Health)
+- ✅ Better accessibility (WCAG contrast maintained automatically)
+- ✅ Rich hero images remain focal point (not competing with colored cards)
+
 ### Goals List View
 
 ```swift
@@ -737,16 +841,54 @@ Image("background")
 // Full vibrancy - let glass refract it!
 ```
 
+### Semantic Color System (HIG Vibrancy)
+
+SwiftUI provides semantic colors that automatically adapt with vibrancy on materials:
+
+| Semantic Color | Use Case | Vibrancy Level |
+|----------------|----------|----------------|
+| `.primary` | Primary text, main content | High vibrancy |
+| `.secondary` | Supporting text, icons | Medium vibrancy |
+| `.tertiary` | Tertiary text, placeholders | Lower vibrancy |
+| `.quaternary` | Background fills, subtle accents | Minimal vibrancy |
+| `.tint` | Accent color (progress, active states) | System accent |
+
+**Example Hierarchy**:
+```swift
+VStack {
+    Text("Main Title")
+        .foregroundStyle(.primary)      // Highest contrast
+
+    Text("Subtitle")
+        .foregroundStyle(.secondary)    // Medium contrast
+
+    Text("Metadata")
+        .foregroundStyle(.tertiary)     // Lower contrast
+}
+.padding()
+.background(.quaternary)                // Subtle background fill
+.clipShape(RoundedRectangle(cornerRadius: 12))
+.background(.regularMaterial)           // Material provides vibrancy
+```
+
+**Why Semantic Colors**:
+- Automatic vibrancy on materials
+- Adapts to Reduced Transparency
+- Respects Increased Contrast settings
+- System-managed dark mode transitions
+- No manual color calculations needed
+
 ### Complete Checklist
 
-- [ ] Recompile with iOS 26 SDK - standard components get Liquid Glass **automatically**
-- [ ] Never stack glass on glass
-- [ ] Always use `.regular` variant by default
-- [ ] Only use `.clear` for immersive media experiences with rich backgrounds
-- [ ] Reserve `.glassEffect()` for **custom** controls only - system bars are automatic
-- [ ] Use standard materials (`.regularMaterial`, `.thinMaterial`) for content layer
-- [ ] Use vibrancy/fills for content ON TOP of glass
-- [ ] Ensure backgrounds are RICH and VIBRANT (not blurred/faded)
+- [x] Recompile with iOS 26 SDK - standard components get Liquid Glass **automatically**
+- [x] Never stack glass on glass
+- [x] Always use `.regular` variant by default
+- [x] Only use `.clear` for immersive media experiences with rich backgrounds
+- [x] Reserve `.glassEffect()` for **custom** controls only - system bars are automatic
+- [x] Use standard materials (`.regularMaterial`, `.thinMaterial`) for content layer
+- [x] Use semantic colors (`.primary`, `.secondary`, `.tertiary`, `.quaternary`) for vibrancy
+- [x] Use `.quaternary` fills for subtle backgrounds (not custom opacity colors)
+- [x] Ensure backgrounds are RICH and VIBRANT (not blurred/faded)
 - [ ] Test with Reduced Transparency accessibility setting
 - [ ] Test with Increased Contrast accessibility setting
 - [ ] Test with Reduced Motion accessibility setting

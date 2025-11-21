@@ -1,9 +1,10 @@
 //
 // MilestonesListView.swift
 // Written by Claude Code on 2025-11-19
+// Refactored by Claude Code on 2025-11-20 - Uses DataStore (declarative pattern)
 //
 // PURPOSE: List of milestones with upcoming dates
-// DATA SOURCE: MilestonesListViewModel
+// DATA SOURCE: DataStore (ValueObservation for automatic updates)
 // INTERACTIONS: Tap to view, swipe to delete, empty state
 //
 
@@ -13,13 +14,13 @@ import SwiftUI
 
 /// List view for milestones
 ///
-/// **PATTERN**: ViewModel-based (same pattern as GoalsListView)
-/// **DATA**: MilestonesListViewModel → MilestoneRepository → Database
+/// **PATTERN**: DataStore-based (declarative pattern, consistent with Goals/Actions/Values/Terms)
+/// **DATA**: DataStore → ValueObservation → Automatic UI updates
 /// **DISPLAY**: MilestoneRowView for each milestone
 /// **INTERACTIONS**: Swipe to delete, pull to refresh
 ///
 public struct MilestonesListView: View {
-    @State private var viewModel = MilestonesListViewModel()
+    @Environment(DataStore.self) private var dataStore
 
     @State private var showingAddMilestone = false
     @State private var milestoneToDelete: MilestoneWithDetails?
@@ -29,10 +30,10 @@ public struct MilestonesListView: View {
 
     public var body: some View {
         Group {
-            if viewModel.isLoading {
+            if dataStore.isLoading {
                 // Loading state
                 ProgressView("Loading milestones...")
-            } else if viewModel.milestones.isEmpty {
+            } else if dataStore.milestones.isEmpty {
                 // Empty state
                 ContentUnavailableView {
                     Label("No Milestones Yet", systemImage: "flag")
@@ -47,7 +48,7 @@ public struct MilestonesListView: View {
             } else {
                 // Milestone list
                 List {
-                    ForEach(viewModel.milestones) { milestoneData in
+                    ForEach(dataStore.milestones) { milestoneData in
                         MilestoneRowView(milestone: milestoneData)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
@@ -62,6 +63,7 @@ public struct MilestonesListView: View {
             }
         }
         .navigationTitle("Milestones")
+        .errorAlert(dataStore: dataStore)  // ✅ Unified error handling
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -71,13 +73,9 @@ public struct MilestonesListView: View {
                 }
             }
         }
-        .task {
-            // Load milestones when view appears
-            await viewModel.loadMilestones()
-        }
         .refreshable {
-            // Pull-to-refresh uses same load method
-            await viewModel.loadMilestones()
+            // Manual refresh (ValueObservation handles automatic updates)
+            await dataStore.loadMilestones()
         }
         .sheet(isPresented: $showingAddMilestone) {
             NavigationStack {
@@ -88,18 +86,12 @@ public struct MilestonesListView: View {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 Task {
-                    await viewModel.deleteMilestone(milestoneData)
+                    try? await dataStore.deleteMilestone(milestoneData)
+                    milestoneToDelete = nil
                 }
             }
         } message: { milestoneData in
             Text("Are you sure you want to delete \"\(milestoneData.expectation.title ?? "this milestone")\"?")
-        }
-        .alert("Error", isPresented: .constant(viewModel.hasError)) {
-            Button("OK") {
-                viewModel.errorMessage = nil
-            }
-        } message: {
-            Text(viewModel.errorMessage ?? "Unknown error")
         }
     }
 }

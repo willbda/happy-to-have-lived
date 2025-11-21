@@ -1,9 +1,10 @@
 //
 // ObligationsListView.swift
 // Written by Claude Code on 2025-11-19
+// Refactored by Claude Code on 2025-11-20 - Uses DataStore (declarative pattern)
 //
 // PURPOSE: List of obligations with deadlines
-// DATA SOURCE: ObligationsListViewModel
+// DATA SOURCE: DataStore (ValueObservation for automatic updates)
 // INTERACTIONS: Tap to view, swipe to delete, empty state
 //
 
@@ -13,13 +14,13 @@ import SwiftUI
 
 /// List view for obligations
 ///
-/// **PATTERN**: ViewModel-based (same pattern as MilestonesListView)
-/// **DATA**: ObligationsListViewModel → ObligationRepository → Database
+/// **PATTERN**: DataStore-based (declarative pattern, consistent with Goals/Actions/Values/Terms/Milestones)
+/// **DATA**: DataStore → ValueObservation → Automatic UI updates
 /// **DISPLAY**: ObligationRowView for each obligation
 /// **INTERACTIONS**: Swipe to delete, pull to refresh
 ///
 public struct ObligationsListView: View {
-    @State private var viewModel = ObligationsListViewModel()
+    @Environment(DataStore.self) private var dataStore
 
     @State private var showingAddObligation = false
     @State private var obligationToDelete: ObligationWithDetails?
@@ -29,10 +30,10 @@ public struct ObligationsListView: View {
 
     public var body: some View {
         Group {
-            if viewModel.isLoading {
+            if dataStore.isLoading {
                 // Loading state
                 ProgressView("Loading obligations...")
-            } else if viewModel.obligations.isEmpty {
+            } else if dataStore.obligations.isEmpty {
                 // Empty state
                 ContentUnavailableView {
                     Label("No Obligations Yet", systemImage: "checkmark.circle")
@@ -47,7 +48,7 @@ public struct ObligationsListView: View {
             } else {
                 // Obligation list
                 List {
-                    ForEach(viewModel.obligations) { obligationData in
+                    ForEach(dataStore.obligations) { obligationData in
                         ObligationRowView(obligation: obligationData)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
@@ -62,6 +63,7 @@ public struct ObligationsListView: View {
             }
         }
         .navigationTitle("Obligations")
+        .errorAlert(dataStore: dataStore)  // ✅ Unified error handling
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -71,13 +73,9 @@ public struct ObligationsListView: View {
                 }
             }
         }
-        .task {
-            // Load obligations when view appears
-            await viewModel.loadObligations()
-        }
         .refreshable {
-            // Pull-to-refresh uses same load method
-            await viewModel.loadObligations()
+            // Manual refresh (ValueObservation handles automatic updates)
+            await dataStore.loadObligations()
         }
         .sheet(isPresented: $showingAddObligation) {
             NavigationStack {
@@ -88,18 +86,12 @@ public struct ObligationsListView: View {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 Task {
-                    await viewModel.deleteObligation(obligationData)
+                    try? await dataStore.deleteObligation(obligationData)
+                    obligationToDelete = nil
                 }
             }
         } message: { obligationData in
             Text("Are you sure you want to delete \"\(obligationData.expectation.title ?? "this obligation")\"?")
-        }
-        .alert("Error", isPresented: .constant(viewModel.hasError)) {
-            Button("OK") {
-                viewModel.errorMessage = nil
-            }
-        } message: {
-            Text(viewModel.errorMessage ?? "Unknown error")
         }
     }
 }

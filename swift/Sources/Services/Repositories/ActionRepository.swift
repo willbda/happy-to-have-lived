@@ -65,9 +65,8 @@ public final class ActionRepository: BaseRepository<ActionData> {
     /// FROM actions a
     /// ORDER BY logTime DESC
     /// ```
-    public override func fetchAll() async throws -> [ActionData] {
-        try await read { db in
-            let sql = """
+    public override func fetchAll(_ db: Database) throws -> [ActionData] {
+        let sql = """
                 SELECT
                     a.id as actionId,
                     a.title as actionTitle,
@@ -123,9 +122,8 @@ public final class ActionRepository: BaseRepository<ActionData> {
                 ORDER BY a.logTime DESC
                 """
 
-            let rows = try ActionQueryRow.fetchAll(db, sql: sql)
-            return try rows.map { try self.assembleActionData(from: $0) }
-        }
+        let rows = try ActionQueryRow.fetchAll(db, sql: sql)
+        return try rows.map { try self.assembleActionData(from: $0) }
     }
 
     /// Check if action exists by ID

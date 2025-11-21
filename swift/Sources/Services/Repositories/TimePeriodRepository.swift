@@ -62,45 +62,43 @@ public final class TimePeriodRepository: BaseRepository<TimePeriodData> {
     /// **Pattern**: Simple JOIN + bulk fetch for assignments
     /// **Performance**: O(2) queries (terms+periods, then assignments)
     /// **Source**: Adapted from TimePeriodRepository.swift FetchAllTermsRequest (lines 143-184)
-    public override func fetchAll() async throws -> [TimePeriodData] {
-        try await read { db in
-            // Step 1: Fetch terms + time periods via 1:1 JOIN
-            let termPeriods = try GoalTerm.all
-                .order { $0.termNumber.desc() }
-                .join(TimePeriod.all) { $0.timePeriodId.eq($1.id) }
-                .fetchAll(db)
+    public override func fetchAll(_ db: Database) throws -> [TimePeriodData] {
+        // Step 1: Fetch terms + time periods via 1:1 JOIN
+        let termPeriods = try GoalTerm.all
+            .order { $0.termNumber.desc() }
+            .join(TimePeriod.all) { $0.timePeriodId.eq($1.id) }
+            .fetchAll(db)
 
-            // Step 2: Bulk fetch goal assignments (avoid N+1)
-            let termIds = termPeriods.map { $0.0.id }
-            let allAssignments = try TermGoalAssignment.all
-                .where { termIds.contains($0.termId) }
-                .fetchAll(db)
+        // Step 2: Bulk fetch goal assignments (avoid N+1)
+        let termIds = termPeriods.map { $0.0.id }
+        let allAssignments = try TermGoalAssignment.all
+            .where { termIds.contains($0.termId) }
+            .fetchAll(db)
 
-            // Group by termId for O(1) lookup
-            let assignmentsByTerm = Dictionary(
-                grouping: allAssignments,
-                by: { $0.termId }
+        // Group by termId for O(1) lookup
+        let assignmentsByTerm = Dictionary(
+            grouping: allAssignments,
+            by: { $0.termId }
+        )
+
+        // Step 3: Assemble TimePeriodData from (GoalTerm, TimePeriod) tuples
+        return termPeriods.map { (term, timePeriod) in
+            let goalIds = assignmentsByTerm[term.id]?
+                .map { $0.goalId }
+                .sorted { $0.uuidString < $1.uuidString }
+
+            return TimePeriodData(
+                id: term.id,
+                termNumber: term.termNumber,
+                theme: term.theme,
+                reflection: term.reflection,
+                status: term.status?.rawValue,
+                timePeriodId: timePeriod.id,
+                timePeriodTitle: timePeriod.title,
+                startDate: timePeriod.startDate,
+                endDate: timePeriod.endDate,
+                assignedGoalIds: goalIds
             )
-
-            // Step 3: Assemble TimePeriodData from (GoalTerm, TimePeriod) tuples
-            return termPeriods.map { (term, timePeriod) in
-                let goalIds = assignmentsByTerm[term.id]?
-                    .map { $0.goalId }
-                    .sorted { $0.uuidString < $1.uuidString }
-
-                return TimePeriodData(
-                    id: term.id,
-                    termNumber: term.termNumber,
-                    theme: term.theme,
-                    reflection: term.reflection,
-                    status: term.status?.rawValue,
-                    timePeriodId: timePeriod.id,
-                    timePeriodTitle: timePeriod.title,
-                    startDate: timePeriod.startDate,
-                    endDate: timePeriod.endDate,
-                    assignedGoalIds: goalIds
-                )
-            }
         }
     }
 

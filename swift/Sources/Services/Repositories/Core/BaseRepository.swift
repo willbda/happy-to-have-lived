@@ -17,6 +17,7 @@ import Foundation
 import Models
 import SQLiteData
 import GRDB
+import Combine
 
 /// Base repository implementation providing common functionality
 ///
@@ -58,19 +59,29 @@ open class BaseRepository<DataType>: Repository
 
     // MARK: - Abstract Methods (Must Override)
 
-    /// Fetch all entities from the database
+    /// Fetch all entities from the database (synchronous, for use in transactions)
     ///
     /// Subclasses MUST override this method with entity-specific query logic.
-    /// Use the `read` wrapper for automatic error mapping:
+    /// This is the canonical fetch implementation - async and observation methods call this.
+    ///
     /// ```swift
-    /// override func fetchAll() async throws -> [DataType] {
-    ///     try await read { db in
-    ///         // Your query here returning [ActionData], [GoalData], etc.
-    ///     }
+    /// override func fetchAll(_ db: Database) throws -> [DataType] {
+    ///     // Your query here returning [ActionData], [GoalData], etc.
+    ///     try ActionData.fetchAll(db)
     /// }
     /// ```
+    open func fetchAll(_ db: Database) throws -> [DataType] {
+        fatalError("\(type(of: self)).fetchAll(_:) must be overridden")
+    }
+
+    /// Fetch all entities from the database (async wrapper)
+    ///
+    /// Default implementation calls the synchronous `fetchAll(_:)` within a read transaction.
+    /// Subclasses typically don't need to override this - just implement `fetchAll(_:)`.
     open func fetchAll() async throws -> [DataType] {
-        fatalError("\(type(of: self)).fetchAll() must be overridden")
+        try await read { db in
+            try self.fetchAll(db)
+        }
     }
 
     /// Check if an entity exists by ID
@@ -96,6 +107,38 @@ open class BaseRepository<DataType>: Repository
     /// ```
     open func fetchForExport(from startDate: Date?, to endDate: Date?) async throws -> [DataType] {
         fatalError("\(type(of: self)).fetchForExport(from:to:) must be overridden")
+    }
+
+    // MARK: - Database Observation
+
+    /// Observe all entities in the database
+    ///
+    /// Returns a Combine publisher that emits updated entity arrays whenever relevant database tables change.
+    /// Uses GRDB's ValueObservation to automatically track which tables affect this query.
+    ///
+    /// **Pattern**: Repository provides observation, consumer subscribes
+    /// ```swift
+    /// let cancellable = repository
+    ///     .observeAll()
+    ///     .sink { entities in
+    ///         self.items = entities
+    ///     }
+    /// ```
+    ///
+    /// **Benefits**:
+    /// - Automatic updates on local writes
+    /// - Automatic updates on CloudKit sync
+    /// - Efficient (only refetches when relevant tables change)
+    /// - Testable (can mock publisher)
+    ///
+    /// - Returns: Publisher that emits fresh entity arrays on database changes
+    public func observeAll() -> AnyPublisher<[DataType], Error> {
+        ValueObservation
+            .tracking { [self] db in
+                try self.fetchAll(db)
+            }
+            .publisher(in: database, scheduling: .immediate)
+            .eraseToAnyPublisher()
     }
 
     // MARK: - Provided Functionality

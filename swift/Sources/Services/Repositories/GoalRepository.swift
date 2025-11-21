@@ -49,14 +49,14 @@ public final class GoalRepository: BaseRepository<GoalData> {
 
     // MARK: - Required Overrides (BaseRepository)
 
-    /// Fetch all goals with full relationship graph using JSON aggregation
+    /// Fetch all goals with full relationship graph using JSON aggregation (synchronous)
     ///
     /// **Pattern**: Single SQL query with nested json_group_array() subqueries
     /// **Performance**: O(1) queries regardless of goal count (was O(5n) before JSON aggregation)
     /// **Source**: Copied from GoalRepository.swift FetchAllGoalsRequest (lines 718-816)
-    public override func fetchAll() async throws -> [GoalData] {
-        try await read { db in
-            let sql = """
+    /// **Usage**: Called by async fetchAll() and BaseRepository.observeAll()
+    public override func fetchAll(_ db: Database) throws -> [GoalData] {
+        let sql = """
             SELECT
                 -- Goal fields (prefixed to avoid column name collisions)
                 g.id as goalId,
@@ -150,11 +150,10 @@ public final class GoalRepository: BaseRepository<GoalData> {
             ORDER BY g.targetDate ASC NULLS LAST
             """
 
-            let rows = try GoalQueryRow.fetchAll(db, sql: sql)
+        let rows = try GoalQueryRow.fetchAll(db, sql: sql)
 
-            return try rows.map { row in
-                try self.assembleGoalData(from: row)
-            }
+        return try rows.map { row in
+            try self.assembleGoalData(from: row)
         }
     }
 

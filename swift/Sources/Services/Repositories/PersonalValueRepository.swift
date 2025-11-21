@@ -73,32 +73,30 @@ public final class PersonalValueRepository: BaseRepository<PersonalValueData> {
     /// FROM personalValues pv
     /// ORDER BY priority ASC
     /// ```
-    public override func fetchAll() async throws -> [PersonalValueData] {
-        try await read { db in
-            let sql = """
-                SELECT
-                    pv.id,
-                    pv.title,
-                    pv.detailedDescription,
-                    pv.freeformNotes,
-                    pv.logTime,
-                    pv.priority,
-                    pv.valueLevel,
-                    pv.lifeDomain,
-                    pv.alignmentGuidance,
-                    COALESCE(
-                        (SELECT json_group_array(gr.goalId)
-                         FROM goalRelevances gr
-                         WHERE gr.valueId = pv.id),
-                        '[]'
-                    ) as alignedGoalIdsJson
-                FROM personalValues pv
-                ORDER BY pv.priority ASC
-                """
+    public override func fetchAll(_ db: Database) throws -> [PersonalValueData] {
+        let sql = """
+            SELECT
+                pv.id,
+                pv.title,
+                pv.detailedDescription,
+                pv.freeformNotes,
+                pv.logTime,
+                pv.priority,
+                pv.valueLevel,
+                pv.lifeDomain,
+                pv.alignmentGuidance,
+                COALESCE(
+                    (SELECT json_group_array(gr.goalId)
+                     FROM goalRelevances gr
+                     WHERE gr.valueId = pv.id),
+                    '[]'
+                ) as alignedGoalIdsJson
+            FROM personalValues pv
+            ORDER BY pv.priority ASC
+            """
 
-            let rows = try ValueQueryRow.fetchAll(db, sql: sql)
-            return try rows.map { try self.assembleValueData(from: $0) }
-        }
+        let rows = try ValueQueryRow.fetchAll(db, sql: sql)
+        return try rows.map { try self.assembleValueData(from: $0) }
     }
 
     /// Check if personal value exists by ID

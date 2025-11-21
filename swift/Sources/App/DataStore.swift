@@ -1,0 +1,577 @@
+//
+// DataStore.swift
+// Written by Claude Code on 2025-11-20
+//
+// PURPOSE: Central @Observable store for all app data
+// ARCHITECTURE: Single source of truth, delegates to repositories/coordinators
+// PATTERN: Apple's declarative SwiftUI pattern (see AddRichGraphicsToYourSwiftUIApp)
+//
+// RESPONSIBILITIES:
+// - Hold all app data (goals, actions, values, terms)
+// - Provide methods for CRUD operations
+// - Automatically update state after database operations
+// - Eliminate need for manual refresh calls in views
+//
+// DATA FLOW:
+// App creates DataStore → Injects via environment → Views observe/mutate
+//
+// BENEFITS vs ViewModels:
+// - Single source of truth (not separate list/form ViewModels)
+// - Automatic state propagation (no manual refresh)
+// - Truly declarative (SwiftUI reacts to changes)
+// - Simpler testing (one store vs 8 ViewModels)
+//
+
+import Foundation
+import Observation
+import Dependencies
+import Services
+import Models
+import SQLiteData
+import Combine
+import GRDB
+
+/// Central data store for all app data
+///
+/// **PATTERN**: Apple's @Observable store pattern
+/// - Single source of truth for all entities
+/// - Views receive environment object or bindings
+/// - Changes propagate automatically via @Observable
+///
+/// **USAGE**:
+/// ```swift
+/// // In App:
+/// @State private var dataStore = DataStore()
+///
+/// ContentView()
+///     .environment(dataStore)
+///
+/// // In View:
+/// @Environment(DataStore.self) var dataStore
+///
+/// List {
+///     ForEach(dataStore.goals) { goal in
+///         GoalRow(goal: goal)
+///     }
+/// }
+/// ```
+@Observable
+@MainActor
+public final class DataStore {
+
+    // MARK: - Observable State
+
+    /// All goals in the app
+    public var goals: [GoalData] = []
+
+    /// All actions in the app
+    public var actions: [ActionData] = []
+
+    /// All personal values in the app
+    public var values: [PersonalValueData] = []
+
+    /// All terms (10-week periods) in the app
+    public var terms: [TimePeriodData] = []
+
+    /// Loading state for UI feedback
+    public var isLoading: Bool = false
+
+    /// Error message for user display
+    public var errorMessage: String?
+
+    // MARK: - Computed Properties
+
+    /// Whether there's an error to display
+    public var hasError: Bool {
+        errorMessage != nil
+    }
+
+    /// Active goals (for filtering in UI)
+    public var activeGoals: [GoalData] {
+        // TODO: Filter by status/date when we add those fields
+        goals
+    }
+
+    // MARK: - Dependencies
+
+    /// Database dependency (injected, not stored as property)
+    @ObservationIgnored
+    @Dependency(\.defaultDatabase) private var database
+
+    // MARK: - ValueObservation Subscriptions
+
+    /// Combine cancellables for database observations
+    @ObservationIgnored
+    private var cancellables: Set<AnyCancellable> = []
+
+    // MARK: - Initialization
+
+    public init() {
+        // NOTE: Don't start observing in init() - database may not be configured yet!
+        // Call startObserving() explicitly after DatabaseBootstrap.configure() runs.
+        //
+        // WHY: @State properties initialize BEFORE App.init() runs, so DataStore
+        // is created before DatabaseBootstrap.configure() sets up the real database.
+        // If we observe here, we'll connect to the default in-memory database instead
+        // of the production SQLite database.
+        //
+        // PATTERN: App creates DataStore → App.init() configures DB → App calls startObserving()
+    }
+
+    /// Start observing database changes
+    ///
+    /// **IMPORTANT**: Must be called AFTER DatabaseBootstrap.configure() to ensure
+    /// observations connect to the production database, not the in-memory default.
+    ///
+    /// **When to call**: In App's .task modifier, after database is configured
+    ///
+    /// **Pattern**:
+    /// ```swift
+    /// @main
+    /// struct MyApp: App {
+    ///     @State private var dataStore: DataStore?
+    ///
+    ///     init() {
+    ///         DatabaseBootstrap.configure()  // ← Database ready
+    ///     }
+    ///
+    ///     var body: some Scene {
+    ///         WindowGroup {
+    ///             ContentView()
+    ///         }
+    ///         .task {
+    ///             if dataStore == nil {
+    ///                 let store = DataStore()
+    ///                 store.startObserving()  // ← Start observations
+    ///                 dataStore = store
+    ///             }
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    public func startObserving() {
+        startObservingDatabase()
+    }
+
+    /// Start ValueObservation for all entity types
+    ///
+    /// **Pattern**: Subscribe to repository observations (repositories handle ValueObservation)
+    /// **Tracking**: Automatic - GRDB figures out which tables affect each query
+    /// **Updates**: Any write to relevant tables triggers re-fetch + @Observable propagation
+    ///
+    /// **Architecture**:
+    /// - BaseRepository provides `observeAll()` → Combine publisher
+    /// - DataStore subscribes → Updates @Observable properties
+    /// - SwiftUI views observe DataStore → Automatic UI updates
+    private func startObservingDatabase() {
+        // Goals observation
+        GoalRepository(database: database)
+            .observeAll()
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Goals observation failed: \(error)")
+                    }
+                },
+                receiveValue: { [weak self] newGoals in
+                    self?.goals = newGoals
+                    print("🔄 Goals updated: \(newGoals.count)")
+                }
+            )
+            .store(in: &cancellables)
+
+        // Actions observation
+        ActionRepository(database: database)
+            .observeAll()
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Actions observation failed: \(error)")
+                    }
+                },
+                receiveValue: { [weak self] newActions in
+                    self?.actions = newActions
+                    print("🔄 Actions updated: \(newActions.count)")
+                }
+            )
+            .store(in: &cancellables)
+
+        // PersonalValues observation
+        PersonalValueRepository(database: database)
+            .observeAll()
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Values observation failed: \(error)")
+                    }
+                },
+                receiveValue: { [weak self] newValues in
+                    self?.values = newValues
+                    print("🔄 Values updated: \(newValues.count)")
+                }
+            )
+            .store(in: &cancellables)
+
+        // TimePeriods observation
+        TimePeriodRepository(database: database)
+            .observeAll()
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Terms observation failed: \(error)")
+                    }
+                },
+                receiveValue: { [weak self] newTerms in
+                    self?.terms = newTerms
+                    print("🔄 Terms updated: \(newTerms.count)")
+                }
+            )
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Goals Operations
+
+    /// Load all goals from database
+    ///
+    /// **NOTE**: With ValueObservation, this is rarely needed!
+    /// **Usage**: Only for manual refresh (pull-to-refresh)
+    /// **Normal flow**: ValueObservation automatically updates on any database change
+    public func loadGoals() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = GoalRepository(database: database)
+            goals = try await repository.fetchAll()
+            print("✅ DataStore: Manual load - \(goals.count) goals")
+        } catch let error as ValidationError {
+            errorMessage = error.userMessage
+            print("❌ DataStore ValidationError: \(error.userMessage)")
+        } catch {
+            errorMessage = "Failed to load goals: \(error.localizedDescription)"
+            print("❌ DataStore: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Create a new goal
+    ///
+    /// **Pattern**: Coordinator creates goal → ValueObservation auto-updates UI
+    /// **Result**: List views automatically update (no manual reload needed!)
+    public func createGoal(from formData: GoalFormData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = GoalCoordinator(database: database)
+            _ = try await coordinator.create(from: formData)
+            errorMessage = nil
+
+            print("✅ DataStore: Created goal (ValueObservation will update UI)")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to create goal - \(error)")
+            throw error
+        }
+    }
+
+    /// Update an existing goal
+    ///
+    /// **Pattern**: Coordinator updates goal, reload all to get fresh data
+    /// **Result**: List views automatically update (via @Observable)
+    public func updateGoal(
+        id: UUID,
+        from formData: GoalFormData,
+        existing: GoalData
+    ) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            // Reconstruct entities from GoalData
+            let goal = Goal(
+                expectationId: existing.expectationId,
+                startDate: existing.startDate,
+                targetDate: existing.targetDate,
+                actionPlan: existing.actionPlan,
+                expectedTermLength: existing.expectedTermLength,
+                id: existing.id
+            )
+
+            let expectation = Expectation(
+                title: existing.title,
+                detailedDescription: existing.detailedDescription,
+                freeformNotes: existing.freeformNotes,
+                expectationType: .goal,
+                expectationImportance: existing.expectationImportance,
+                expectationUrgency: existing.expectationUrgency,
+                logTime: existing.logTime,
+                id: existing.expectationId
+            )
+
+            let existingTargets = existing.measureTargets.map { target in
+                ExpectationMeasure(
+                    expectationId: existing.expectationId,
+                    measureId: target.measureId,
+                    targetValue: target.targetValue,
+                    createdAt: target.createdAt,
+                    freeformNotes: target.freeformNotes,
+                    id: target.id
+                )
+            }
+
+            let existingAlignments = existing.valueAlignments.map { alignment in
+                GoalRelevance(
+                    goalId: existing.id,
+                    valueId: alignment.valueId,
+                    alignmentStrength: alignment.alignmentStrength,
+                    relevanceNotes: alignment.relevanceNotes,
+                    createdAt: alignment.createdAt,
+                    id: alignment.id
+                )
+            }
+
+            let existingAssignment: TermGoalAssignment? = existing.termAssignment.map { assignment in
+                TermGoalAssignment(
+                    id: assignment.id,
+                    termId: assignment.termId,
+                    goalId: existing.id,
+                    assignmentOrder: assignment.assignmentOrder,
+                    createdAt: assignment.createdAt
+                )
+            }
+
+            // Update via coordinator
+            let coordinator = GoalCoordinator(database: database)
+            _ = try await coordinator.update(
+                goal: goal,
+                expectation: expectation,
+                existingTargets: existingTargets,
+                existingAlignments: existingAlignments,
+                existingAssignment: existingAssignment,
+                from: formData
+            )
+
+            // Reload all goals to get fresh data
+            errorMessage = nil
+
+            print("✅ DataStore: Updated goal")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to update goal - \(error)")
+            throw error
+        }
+    }
+
+    /// Delete a goal
+    ///
+    /// **Pattern**: Coordinator deletes, store removes from array
+    /// **Result**: List views automatically update
+    public func deleteGoal(_ goalData: GoalData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = GoalCoordinator(database: database)
+            try await coordinator.delete(goalData)
+
+            // Remove from in-memory array
+            goals.removeAll { $0.id == goalData.id }
+            errorMessage = nil
+
+            print("✅ DataStore: Deleted goal '\(goalData.title ?? "")'")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to delete goal - \(error)")
+            throw error
+        }
+    }
+
+    // MARK: - Actions Operations
+
+    /// Load all actions from database
+    public func loadActions() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = ActionRepository(database: database)
+            actions = try await repository.fetchAll()
+            print("✅ DataStore: Loaded \(actions.count) actions")
+        } catch let error as ValidationError {
+            errorMessage = error.userMessage
+            print("❌ DataStore ValidationError: \(error.userMessage)")
+        } catch {
+            errorMessage = "Failed to load actions: \(error.localizedDescription)"
+            print("❌ DataStore: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Create a new action
+    public func createAction(from formData: ActionFormData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = ActionCoordinator(database: database)
+            _ = try await coordinator.create(from: formData)
+
+            errorMessage = nil
+
+            print("✅ DataStore: Created action")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to create action - \(error)")
+            throw error
+        }
+    }
+
+    /// Delete an action
+    public func deleteAction(_ actionData: ActionData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = ActionCoordinator(database: database)
+            try await coordinator.delete(actionData)
+
+            actions.removeAll { $0.id == actionData.id }
+            errorMessage = nil
+
+            print("✅ DataStore: Deleted action '\(actionData.title ?? "")'")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to delete action - \(error)")
+            throw error
+        }
+    }
+
+    // MARK: - Values Operations
+
+    /// Load all personal values from database
+    public func loadValues() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = PersonalValueRepository(database: database)
+            values = try await repository.fetchAll()
+            print("✅ DataStore: Loaded \(values.count) values")
+        } catch let error as ValidationError {
+            errorMessage = error.userMessage
+            print("❌ DataStore ValidationError: \(error.userMessage)")
+        } catch {
+            errorMessage = "Failed to load values: \(error.localizedDescription)"
+            print("❌ DataStore: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Create a new personal value
+    public func createValue(from formData: PersonalValueFormData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = PersonalValueCoordinator(database: database)
+            _ = try await coordinator.create(from: formData)
+
+            errorMessage = nil
+
+            print("✅ DataStore: Created value")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to create value - \(error)")
+            throw error
+        }
+    }
+
+    /// Delete a personal value
+    public func deleteValue(_ valueData: PersonalValueData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = PersonalValueCoordinator(database: database)
+            try await coordinator.delete(valueData)
+
+            values.removeAll { $0.id == valueData.id }
+            errorMessage = nil
+
+            print("✅ DataStore: Deleted value '\(valueData.title)'")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to delete value - \(error)")
+            throw error
+        }
+    }
+
+    // MARK: - Terms Operations
+
+    /// Load all terms from database
+    public func loadTerms() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = TimePeriodRepository(database: database)
+            terms = try await repository.fetchAll()
+            print("✅ DataStore: Loaded \(terms.count) terms")
+        } catch let error as ValidationError {
+            errorMessage = error.userMessage
+            print("❌ DataStore ValidationError: \(error.userMessage)")
+        } catch {
+            errorMessage = "Failed to load terms: \(error.localizedDescription)"
+            print("❌ DataStore: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Create a new term
+    public func createTerm(from formData: TimePeriodFormData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = TimePeriodCoordinator(database: database)
+            _ = try await coordinator.create(from: formData)
+
+            errorMessage = nil
+
+            print("✅ DataStore: Created term")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to create term - \(error)")
+            throw error
+        }
+    }
+
+    /// Delete a term
+    public func deleteTerm(_ termData: TimePeriodData) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = TimePeriodCoordinator(database: database)
+            try await coordinator.delete(termData)
+
+            terms.removeAll { $0.id == termData.id }
+            errorMessage = nil
+
+            print("✅ DataStore: Deleted term \(termData.termNumber)")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to delete term - \(error)")
+            throw error
+        }
+    }
+}

@@ -15,32 +15,52 @@ import Services  // EmbeddingBackfillService for background embedding generation
 @main
 struct HappyToHaveLivedApp: App {
     @State private var isPerformingInitialSync = false
+    @State private var dataStore: DataStore?  // ← Created after database is ready
 
     init() {
         // Initialize database and CloudKit sync
+        // IMPORTANT: This must run BEFORE DataStore is created
+        // so that @Dependency(\.defaultDatabase) resolves to the production database
         DatabaseBootstrap.configure()
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .overlay(alignment: .top) {
-                    if isPerformingInitialSync {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Syncing with iCloud...")
-                                .font(.subheadline)
-                        }
-                        .padding()
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                        .padding(.top, 8)
+            Group {
+                if let dataStore {
+                    ContentView()
+                        .environment(dataStore)  // ← Inject store into environment
+                } else {
+                    // Show loading state while DataStore initializes
+                    ProgressView("Initializing...")
+                }
+            }
+            .overlay(alignment: .top) {
+                if isPerformingInitialSync {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Syncing with iCloud...")
+                            .font(.subheadline)
                     }
+                    .padding()
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.top, 8)
                 }
-                .task {
-                    await performInitialSyncIfNeeded()
-                    await startBackgroundEmbeddingGeneration()
+            }
+            .task {
+                // Create DataStore AFTER database is configured
+                // This ensures @Dependency(\.defaultDatabase) resolves to production DB
+                if dataStore == nil {
+                    let store = DataStore()
+                    store.startObserving()  // ← Start ValueObservation
+                    dataStore = store
                 }
+
+                await performInitialSyncIfNeeded()
+                await loadAllData()  // ← Load all data after sync
+                await startBackgroundEmbeddingGeneration()
+            }
         }
     }
 
@@ -121,6 +141,30 @@ struct HappyToHaveLivedApp: App {
         }
 
         isPerformingInitialSync = false
+    }
+
+    /// Load all data into DataStore after sync completes
+    ///
+    /// **Pattern**: Load once on app launch, then data stays in memory
+    /// **Performance**: 4 parallel queries (goals, actions, values, terms)
+    /// **Result**: DataStore holds all data, views just observe
+    private func loadAllData() async {
+        guard let dataStore else {
+            print("⚠️ DataStore not initialized, skipping data load")
+            return
+        }
+
+        print("📊 Loading all data into DataStore...")
+
+        // Load all entity types in parallel
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await dataStore.loadGoals() }
+            group.addTask { await dataStore.loadActions() }
+            group.addTask { await dataStore.loadValues() }
+            group.addTask { await dataStore.loadTerms() }
+        }
+
+        print("✅ DataStore loaded: \(dataStore.goals.count) goals, \(dataStore.actions.count) actions, \(dataStore.values.count) values, \(dataStore.terms.count) terms")
     }
 
     /// Start background embedding generation for all entities

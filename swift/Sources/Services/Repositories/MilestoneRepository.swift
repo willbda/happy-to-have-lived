@@ -43,7 +43,7 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
         super.init(database: database)
     }
 
-    /// Fetch all milestones with expectation details
+    /// Fetch all milestones with expectation details (synchronous)
     ///
     /// **Implementation**: Simple JOIN query
     /// - milestone INNER JOIN expectations
@@ -57,29 +57,27 @@ public final class MilestoneRepository: BaseRepository<MilestoneWithDetails> {
     /// INNER JOIN expectations e ON m.expectationId = e.id
     /// ORDER BY m.targetDate ASC
     /// ```
-    public override func fetchAll() async throws -> [MilestoneWithDetails] {
-        try await read { db in
-            let sql = """
-                SELECT
-                    m.id as milestoneId,
-                    m.expectationId,
-                    m.targetDate,
-                    e.id as expectationId,
-                    e.title,
-                    e.detailedDescription,
-                    e.freeformNotes,
-                    e.logTime,
-                    e.expectationType,
-                    e.expectationImportance,
-                    e.expectationUrgency
-                FROM milestones m
-                INNER JOIN expectations e ON m.expectationId = e.id
-                ORDER BY m.targetDate ASC
-                """
+    public override func fetchAll(_ db: Database) throws -> [MilestoneWithDetails] {
+        let sql = """
+            SELECT
+                m.id as milestoneId,
+                m.expectationId,
+                m.targetDate,
+                e.id as expectationId,
+                e.title,
+                e.detailedDescription,
+                e.freeformNotes,
+                e.logTime,
+                e.expectationType,
+                e.expectationImportance,
+                e.expectationUrgency
+            FROM milestones m
+            INNER JOIN expectations e ON m.expectationId = e.id
+            ORDER BY m.targetDate ASC
+            """
 
-            let rows = try MilestoneQueryRow.fetchAll(db, sql: sql)
-            return rows.map { self.assembleMilestoneWithDetails(from: $0) }
-        }
+        let rows = try MilestoneQueryRow.fetchAll(db, sql: sql)
+        return rows.map { self.assembleMilestoneWithDetails(from: $0) }
     }
 
     /// Fetch milestone by ID

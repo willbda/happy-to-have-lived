@@ -43,7 +43,7 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
         super.init(database: database)
     }
 
-    /// Fetch all obligations with expectation details
+    /// Fetch all obligations with expectation details (synchronous)
     ///
     /// **Implementation**: Simple JOIN query
     /// - obligation INNER JOIN expectations
@@ -57,31 +57,29 @@ public final class ObligationRepository: BaseRepository<ObligationWithDetails> {
     /// INNER JOIN expectations e ON o.expectationId = e.id
     /// ORDER BY o.deadline ASC
     /// ```
-    public override func fetchAll() async throws -> [ObligationWithDetails] {
-        try await read { db in
-            let sql = """
-                SELECT
-                    o.id as obligationId,
-                    o.expectationId,
-                    o.deadline,
-                    o.requestedBy,
-                    o.consequence,
-                    e.id as expectationId,
-                    e.title,
-                    e.detailedDescription,
-                    e.freeformNotes,
-                    e.logTime,
-                    e.expectationType,
-                    e.expectationImportance,
-                    e.expectationUrgency
-                FROM obligations o
-                INNER JOIN expectations e ON o.expectationId = e.id
-                ORDER BY o.deadline ASC
-                """
+    public override func fetchAll(_ db: Database) throws -> [ObligationWithDetails] {
+        let sql = """
+            SELECT
+                o.id as obligationId,
+                o.expectationId,
+                o.deadline,
+                o.requestedBy,
+                o.consequence,
+                e.id as expectationId,
+                e.title,
+                e.detailedDescription,
+                e.freeformNotes,
+                e.logTime,
+                e.expectationType,
+                e.expectationImportance,
+                e.expectationUrgency
+            FROM obligations o
+            INNER JOIN expectations e ON o.expectationId = e.id
+            ORDER BY o.deadline ASC
+            """
 
-            let rows = try ObligationQueryRow.fetchAll(db, sql: sql)
-            return rows.map { self.assembleObligationWithDetails(from: $0) }
-        }
+        let rows = try ObligationQueryRow.fetchAll(db, sql: sql)
+        return rows.map { self.assembleObligationWithDetails(from: $0) }
     }
 
     /// Fetch obligation by ID

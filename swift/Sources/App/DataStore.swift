@@ -95,17 +95,41 @@ public final class DataStore {
         errorMessage != nil
     }
 
-    /// Active goals (for filtering in UI)
+    /// Active goals (filtered by date range)
+    /// Active means: no target date OR target date is in the future
     public var activeGoals: [GoalData] {
-        // TODO: Filter by status/date when we add those fields
-        goals
+        let now = Date()
+        return goals.filter { goal in
+            if let targetDate = goal.targetDate {
+                return targetDate >= now
+            }
+            return true  // No target date = always active
+        }
+    }
+
+    /// Recent actions (sorted by most recent first)
+    public var recentActions: [ActionData] {
+        actions.sorted { $0.logTime > $1.logTime }
+    }
+
+    // MARK: - Action Filtering Helpers
+
+    /// Get actions that contribute to a specific goal
+    ///
+    /// **Use Case**: Display actions on GoalDetailView, calculate progress for goal card
+    /// **Performance**: O(n) filter on actions array (acceptable for typical action counts)
+    public func actionsForGoal(_ goalId: UUID) -> [ActionData] {
+        actions.filter { action in
+            action.contributions.contains { $0.goalId == goalId }
+        }
     }
 
     // MARK: - Dependencies
 
     /// Database dependency (injected, not stored as property)
+    /// Internal access for GreetingService and other internal services
     @ObservationIgnored
-    @Dependency(\.defaultDatabase) private var database
+    @Dependency(\.defaultDatabase) internal var database
 
     // MARK: - ValueObservation Subscriptions
 

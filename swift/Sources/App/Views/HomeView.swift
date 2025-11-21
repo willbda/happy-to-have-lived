@@ -50,7 +50,7 @@ public struct HomeView: View {
 
     // MARK: - Constants
 
-    private let heroHeight: CGFloat = 300
+    private let heroHeight: CGFloat = 380  // Increased from 300 to match Calm's ~50% ratio
 
     // MARK: - Services
 
@@ -68,63 +68,82 @@ public struct HomeView: View {
 
         NavigationStack(path: $navigationCoordinator.path) {
             NavigationContainer {
-            ScrollView {
-                ZStack(alignment: .topLeading) {
-                    // Hero image with parallax effect
-                    GeometryReader { geometry in
-                        let minY = geometry.frame(in: .global).minY
-                        let imageHeight = max(0, heroHeight + (minY > 0 ? minY : 0))
-                        let opacity = max(0, 1 - (minY / -150))
+                ScrollView {
+                    ZStack(alignment: .topLeading) {
+                        // Hero image with parallax effect
+                        GeometryReader { geometry in
+                            let minY = geometry.frame(in: .global).minY
+                            let imageHeight = max(0, heroHeight + (minY > 0 ? minY : 0))
+                            let opacity = max(0, 1 - (minY / -150))
 
-                        // Hero image (with fallback gradient for preview)
-                        ZStack {
-                            // Background gradient (always present as fallback)
+                            // Hero image (with fallback gradient for preview)
+                            ZStack {
+                                // Background gradient (always present as fallback)
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.4, green: 0.5, blue: 0.6),
+                                        Color(red: 0.2, green: 0.3, blue: 0.4),
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+
+                                // Dynamic image selection based on LLM suggestion
+                                Image(selectedHeroImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            }
+                            .frame(width: geometry.size.width, height: imageHeight)
+                            .clipped()
+                            .opacity(opacity)
+                            .offset(y: minY > 0 ? -minY : 0)
+
+                            // Gradient overlay for readability
                             LinearGradient(
                                 colors: [
-                                    Color(red: 0.4, green: 0.5, blue: 0.6),
-                                    Color(red: 0.2, green: 0.3, blue: 0.4),
+                                    .clear,
+                                    .black.opacity(0.4),
                                 ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                                startPoint: .top,
+                                endPoint: .bottom
                             )
-
-                            // Dynamic image selection based on LLM suggestion
-                            Image(selectedHeroImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
+                            .frame(height: imageHeight)
                         }
-                        .frame(width: geometry.size.width, height: imageHeight)
-                        .clipped()
-                        .opacity(opacity)
-                        .offset(y: minY > 0 ? -minY : 0)
+                        .frame(height: heroHeight)
 
-                        // Gradient overlay for readability
-                        LinearGradient(
-                            colors: [
-                                .clear,
-                                .black.opacity(0.4),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: imageHeight)
+                        // Greeting overlay (on hero image)
+                        greetingOverlay
                     }
-                    .frame(height: heroHeight)
 
-                    // Greeting overlay (on hero image)
-                    greetingOverlay
+                    // Content sections (scroll over hero)
+                    VStack(spacing: 32) {
+                        // Active Goals Section
+                        activeGoalsSection
+
+                        // Recent Actions Section
+                        recentActionsSection
+                    }
+                    .background(.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .offset(y: -16)  // Overlap hero slightly
                 }
-
-                // Content sections (scroll over hero)
-                VStack(spacing: 24) {
-                    // Active Goals Section
-                    activeGoalsSection
-
-                    // Quick Action Button
-                    quickActionButton
-
-                    // Recent Actions Section
-                    recentActionsSection
+                .ignoresSafeArea(edges: .top)
+                .task {
+                    // Generate greeting on view appear
+                    await generateGreeting()
+                }
+                .toolbar {
+                    homeToolbarItems
+                }
+                .sheet(isPresented: $showingLogAction) {
+                    NavigationStack {
+                        ActionFormView()
+                    }
+                }
+                .sheet(item: $actionToEdit) { actionData in
+                    NavigationStack {
+                        ActionFormView(actionToEdit: actionData)
+                    }
                 }
                 .background(.background)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -172,7 +191,7 @@ public struct HomeView: View {
         if let suggestedImage = greetingData?.suggestedHeroImage {
             // Validate it exists in our catalog
             let availableImages = [
-                "Aurora2", "Aurora3", "AuroraAndCarLights", "BackyardTree",
+                "Aurora2", "Aurora3", "AuroraAndCarLights",
                 "BigLakeMountains", "ChicagoRoses", "FamilyHike", "Forest",
                 "Moody", "Mountains4",
             ]
@@ -194,7 +213,7 @@ public struct HomeView: View {
         case 17..<20:
             return "Moody"  // Evening (moody sunset)
         default:
-            return "BackyardTree"  // Night (night lights)
+            return "BigLakeMountains"
         }
     }
 
@@ -269,22 +288,7 @@ public struct HomeView: View {
     // MARK: - Sections
 
     private var activeGoalsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Active Goals")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Button(action: {}) {
-                    Text("See All")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 20)
-
+        Section {
             // Horizontal carousel (real data from DataStore)
             if dataStore.activeGoals.isEmpty {
                 Text("No active goals yet")
@@ -304,86 +308,60 @@ public struct HomeView: View {
                     .padding(.horizontal, 20)
                 }
             }
-        }
-    }
-
-    private var quickActionButton: some View {
-        Button {
-            showingLogAction = true
-        } label: {
+        } header: {
             HStack {
-                Image(systemName: "plus.circle.fill")
-                    .imageScale(.large)
-                Text("Log an Action")
-                    .font(.headline)
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.accentColor)
-            .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .padding(.horizontal, 20)
-        .sheet(isPresented: $showingLogAction) {
-            NavigationStack {
-                ActionFormView()
-            }
-        }
-        // NO onDismiss needed - DataStore updates automatically!
-        .sheet(item: $actionToEdit) { actionData in
-            NavigationStack {
-                ActionFormView(actionToEdit: actionData)
-            }
-        }
-        // NO onDismiss needed - DataStore updates automatically!
-    }
-
-    private var recentActionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Recent Actions")
-                    .font(.headline)
+                Text("Active Goals")
+                    .font(.title3)
+                    .fontWeight(.semibold)
                     .foregroundStyle(.primary)
 
                 Spacer()
 
                 Button(action: {}) {
-                    Text("View All")
+                    Text("See All")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.blue)
                 }
             }
             .padding(.horizontal, 20)
+            .padding(.bottom, 4)
+        }
+    }
 
-            // Action list (real data from DataStore)
+    private var recentActionsSection: some View {
+        Section {
+            // Action list - fully declarative SwiftUI pattern
             if dataStore.actions.isEmpty {
-                Text("No actions logged yet")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 40)
-                    .frame(maxWidth: .infinity)
+                // Empty state (iOS 17+ ContentUnavailableView)
+                ContentUnavailableView {
+                    Label("No Actions Yet", systemImage: "checkmark.circle")
+                } description: {
+                    Text("Actions you log will appear here")
+                }
+                .padding(.vertical, 40)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 20)
             } else {
-                VStack(spacing: 0) {
-                    // Show last 7 recent actions (sorted by DataStore)
-                    ForEach(
-                        Array(
-                            dataStore.recentActions
-                                .prefix(7)
-                                .enumerated()), id: \.element.id
-                    ) { index, actionData in
+                // SwiftUI LazyVStack handles iteration and identity
+                LazyVStack(spacing: 0) {
+                    ForEach(dataStore.recentActions.prefix(25)) { actionData in
                         actionRow(for: actionData)
-
-                        if index < min(6, dataStore.recentActions.count - 1) {
-                            Divider()
-                                .padding(.leading, 20)
-                        }
+                        Divider()
+                            .padding(.leading, 80)
                     }
                 }
-                .background(.background)
+                .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 20)
             }
+        } header: {
+            Text("Recent Actions")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 4)
         }
         .padding(.bottom, 20)
     }
@@ -391,102 +369,48 @@ public struct HomeView: View {
     // MARK: - Real Data Components
 
     private func goalCard(for goalData: GoalData) -> some View {
-        // Get presentation color from GoalPresentation layer
-        let color = goalData.presentationColor
+        // Declarative: Presentation layer handles progress calculation
+        let progress = GoalPresentation.progress(
+            for: goalData,
+            actions: dataStore.actionsForGoal(goalData.id),
+            service: progressService
+        )
 
-        // Calculate real combined progress (time + action)
-        let progress: Double = {
-            // Time-based progress (30% weight)
-            let timeResult = progressService.calculateTimeProgress(
-                startDate: goalData.startDate,
-                targetDate: goalData.targetDate
-            )
-
-            // Action-based progress (70% weight)
-            let goalActions = dataStore.actionsForGoal(goalData.id)
-
-            // Convert to ProgressCalculationService format
-            let actionMeasurements: [ActionWithMeasurements] = goalActions.map { action in
-                ActionWithMeasurements(
-                    id: action.id,
-                    logTime: action.logTime,
-                    measurements: action.measurements.map { measurement in
-                        ActionMeasurement(
-                            measureId: measurement.measureId,
-                            value: measurement.value
-                        )
-                    }
-                )
-            }
-
-            // Convert targets to ProgressCalculationService format
-            let targets: [MeasureTarget] = goalData.measureTargets.map { target in
-                MeasureTarget(
-                    measureId: target.measureId ?? UUID(),
-                    measureTitle: target.measureTitle ?? "",
-                    measureUnit: target.measureUnit ?? "",
-                    targetValue: target.targetValue
-                )
-            }
-
-            let actionResult = progressService.calculateActionProgress(
-                targets: targets,
-                actions: actionMeasurements
-            )
-
-            // Combined: 30% time + 70% action
-            return progressService.calculateCombinedProgress(
-                timeProgress: timeResult.progress,
-                actionProgress: actionResult.progress
-            )
-        }()
-
-        // Format target date
-        let targetDateText: String = {
-            if let targetDate = goalData.targetDate {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .medium
-                return "Target: \(formatter.string(from: targetDate))"
-            } else {
-                return "No target date"
-            }
-        }()
-
-        return VStack(alignment: .leading, spacing: 8) {
-            Spacer()
-
-            // Progress ring
+        return VStack(alignment: .leading, spacing: 12) {
+            // Progress ring with automatic vibrancy
             ZStack {
                 Circle()
-                    .stroke(Color.white.opacity(0.3), lineWidth: 4)
+                    .stroke(.tertiary, lineWidth: 4)
 
                 Circle()
                     .trim(from: 0, to: progress)
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(.tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .rotationEffect(.degrees(-90))
 
                 Text("\(Int(progress * 100))%")
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
-            .frame(width: 50, height: 50)
+            .frame(width: 60, height: 60)
 
-            Spacer()
-
-            // Goal info
+            // Goal info with automatic vibrancy
             VStack(alignment: .leading, spacing: 4) {
                 Text(goalData.title ?? "Untitled Goal")
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .lineLimit(2)
 
-                Text(targetDateText)
+                // Declarative: GoalData computed property handles formatting
+                Text(goalData.formattedTargetDate)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(.secondary)
             }
         }
-        .goalCardStyle(color: color)  // ViewModifier from CardStyles
+        .frame(width: 160)
+        .padding()
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .onTapGesture {
             navigationCoordinator.navigateToGoal(goalData.id)
         }
@@ -508,47 +432,13 @@ public struct HomeView: View {
     }
 
     private func actionRow(for actionData: ActionData) -> some View {
-        // Get icon from MeasurePresentation catalog
-        let icon =
-            actionData.measurements.first.map { measurement in
-                MeasurePresentation.icon(for: measurement.measureUnit)
-            } ?? "checkmark.circle.fill"
-
-        // Get color from linked goal's presentation color
-        let borderColor: Color = {
-            if let firstContribution = actionData.contributions.first,
-                let goal = dataStore.goals.first(where: { $0.id == firstContribution.goalId })
-            {
-                return goal.presentationColor  // Uses GoalPresentation
-            }
-            return .gray
-        }()
-
-        // Format measurement display
-        let measurementText: String = {
-            if let firstMeasurement = actionData.measurements.first {
-                let value = Int(firstMeasurement.value)
-                return "\(value) \(firstMeasurement.measureUnit)"
-            }
-            if let duration = actionData.durationMinutes {
-                let hours = Int(duration) / 60
-                let minutes = Int(duration) % 60
-                if hours > 0 {
-                    return "\(hours)h \(minutes)m"
-                } else {
-                    return "\(minutes)m"
-                }
-            }
-            return ""
-        }()
-
-        return HStack(spacing: 12) {
-            // Icon
-            Image(systemName: icon)
+        HStack(spacing: 12) {
+            // Icon - declarative via ActionData extension
+            Image(systemName: actionData.icon)
                 .font(.title3)
-                .foregroundStyle(borderColor)
+                .foregroundStyle(.secondary)
                 .frame(width: 40, height: 40)
-                .background(borderColor.opacity(0.1))
+                .background(.quaternary)
                 .clipShape(Circle())
 
             // Content
@@ -560,28 +450,27 @@ public struct HomeView: View {
 
                     Spacer()
 
-                    if !measurementText.isEmpty {
-                        Text(measurementText)
+                    // Measurement - declarative via ActionData extension
+                    if !actionData.formattedMeasurement.isEmpty {
+                        Text(actionData.formattedMeasurement)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                // Goal badge (first contribution)
-                if let firstContribution = actionData.contributions.first,
-                    let goal = dataStore.goals.first(where: { $0.id == firstContribution.goalId })
-                {
+                // Goal badge - declarative via ActionData method
+                if let goalTitle = actionData.goalTitle(from: dataStore) {
                     HStack(spacing: 4) {
                         Image(systemName: "target")
                             .font(.caption2)
-                        Text(goal.title ?? "Untitled Goal")
+                        Text(goalTitle)
                             .font(.caption)
                             .lineLimit(1)
                     }
-                    .foregroundStyle(borderColor)
+                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(borderColor.opacity(0.1))
+                    .background(.quaternary)
                     .clipShape(Capsule())
                 }
             }
@@ -592,13 +481,8 @@ public struct HomeView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(borderColor.opacity(0.05))
-        .overlay(
-            Rectangle()
-                .fill(borderColor)
-                .frame(width: 3),
-            alignment: .leading
-        )
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .onTapGesture {
             actionToEdit = actionData
         }
@@ -696,6 +580,18 @@ public struct HomeView: View {
     /// **Actions**: All menu items use type-safe NavigationRoute
     @ToolbarContentBuilder
     private var homeToolbarItems: some ToolbarContent {
+        // Add Action button (persistent, always visible)
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                showingLogAction = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .imageScale(.large)
+                    .foregroundStyle(.blue)
+            }
+        }
+
+        // Menu button
         ToolbarItem(placement: .automatic) {
             Menu {
                 Button {

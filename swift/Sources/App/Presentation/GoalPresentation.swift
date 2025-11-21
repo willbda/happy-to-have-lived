@@ -1,6 +1,7 @@
 //
 // GoalPresentation.swift
 // Written by Claude Code on 2025-11-20
+// Updated on 2025-11-21 to add progress calculation helpers
 //
 // PURPOSE: Presentation helpers for Goal display
 //
@@ -19,6 +20,7 @@
 
 import SwiftUI
 import Models
+import Services
 
 /// Presentation helpers for Goal display
 public struct GoalPresentation {
@@ -39,9 +41,72 @@ public struct GoalPresentation {
         let index = abs(goalId.hashValue) % colorPalette.count
         return colorPalette[index]
     }
+
+    /// Calculate combined progress for a goal (time + action progress)
+    ///
+    /// **Algorithm**: 30% time-based + 70% action-based
+    /// **Inputs**: Goal data, related actions, progress service
+    /// **Returns**: Progress value 0.0 to 1.0
+    ///
+    /// **Example**:
+    /// ```swift
+    /// let progress = GoalPresentation.progress(
+    ///     for: goalData,
+    ///     actions: dataStore.actionsForGoal(goalData.id),
+    ///     service: progressService
+    /// )
+    /// Text("\(Int(progress * 100))%")
+    /// ```
+    public static func progress(
+        for goal: GoalData,
+        actions: [ActionData],
+        service: ProgressCalculationService
+    ) -> Double {
+        // Time-based progress (30% weight)
+        let timeResult = service.calculateTimeProgress(
+            startDate: goal.startDate,
+            targetDate: goal.targetDate
+        )
+
+        // Convert actions to service format
+        let actionMeasurements: [ActionWithMeasurements] = actions.map { action in
+            ActionWithMeasurements(
+                id: action.id,
+                logTime: action.logTime,
+                measurements: action.measurements.map { measurement in
+                    ActionMeasurement(
+                        measureId: measurement.measureId,
+                        value: measurement.value
+                    )
+                }
+            )
+        }
+
+        // Convert targets to service format
+        let targets: [MeasureTarget] = goal.measureTargets.map { target in
+            MeasureTarget(
+                measureId: target.measureId,
+                measureTitle: target.measureTitle ?? "",
+                measureUnit: target.measureUnit,
+                targetValue: target.targetValue
+            )
+        }
+
+        // Action-based progress (70% weight)
+        let actionResult = service.calculateActionProgress(
+            targets: targets,
+            actions: actionMeasurements
+        )
+
+        // Combined: 30% time + 70% action
+        return service.calculateCombinedProgress(
+            timeProgress: timeResult.progress,
+            actionProgress: actionResult.progress
+        )
+    }
 }
 
-// MARK: - Convenience Extension
+// MARK: - Convenience Extensions
 
 extension GoalData {
     /// Presentation color for this goal (delegates to GoalPresentation)
@@ -50,5 +115,19 @@ extension GoalData {
     /// **Implementation**: Thin wrapper around static helper
     public var presentationColor: Color {
         GoalPresentation.color(for: id)
+    }
+
+    /// Formatted target date for display
+    ///
+    /// **Example**:
+    /// ```swift
+    /// Text(goal.formattedTargetDate)  // "Target: Nov 21, 2025" or "No target date"
+    /// ```
+    public var formattedTargetDate: String {
+        if let targetDate = targetDate {
+            return "Target: \(targetDate.formatted(date: .abbreviated, time: .omitted))"
+        } else {
+            return "No target date"
+        }
     }
 }

@@ -4,10 +4,16 @@
 // Rewritten by Claude Code on 2025-11-03 to follow Apple's SwiftUI patterns
 // Updated by Claude Code on 2025-11-16 - Migrated to canonical GoalData
 // Refactored by Claude Code on 2025-11-19 - Consolidated state with @Observable GoalFormModel
+// Refactored by Claude Code on 2025-11-20 - Uses DataStore + unified error alerts
 //
 // PURPOSE: Form for creating/editing Goals with full relationship support
-// PATTERN: @Observable form model (17 @State variables → 1 @State model)
-//          Eliminates manual synchronization (no onChange handlers needed)
+// PATTERN: GoalFormModel (@Observable) + DataStore (operations) + View+ErrorAlert (errors)
+//
+// DATA FLOW:
+// 1. User edits local @State model (GoalFormModel)
+// 2. Save button calls dataStore.createGoal() or dataStore.updateGoal()
+// 3. DataStore ValueObservation automatically updates list views
+// 4. Errors display via .errorAlert(dataStore:) modifier
 //
 
 import Dependencies
@@ -18,21 +24,23 @@ import SwiftUI
 
 /// Form view for Goal input (create + edit)
 ///
-/// **REFACTORED** (2025-11-19): Uses @Observable GoalFormModel
-/// **BEFORE**: 17 @State variables + onChange synchronization
-/// **AFTER**: 1 @State model + computed properties
+/// **DECLARATIVE ARCHITECTURE** (2025-11-20):
+/// - Local form state (GoalFormModel) for editing
+/// - DataStore methods for persistence + automatic list updates
+/// - No manual refresh needed (DataStore propagates changes)
+/// - Save button pattern (explicit, validated writes)
 ///
 /// COMPLEXITY: Most complex form in app
 /// - Expectation fields (title, description, importance, urgency)
 /// - Goal fields (dates, action plan, term length)
 /// - Metric targets (repeating section)
-/// - Value alignments (multi-select with NO manual sync!)
+/// - Value alignments (multi-select)
 /// - Optional term assignment
-///
-/// EDIT MODE: Initialize GoalFormModel from GoalData
 public struct GoalFormView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var viewModel = GoalFormViewModel()
+    @Environment(DataStore.self) private var dataStore
+
+    @State private var isSaving = false
 
     // MARK: - Form Model (Single Source of Truth!)
 
@@ -74,7 +82,7 @@ public struct GoalFormView: View {
     // MARK: - Body
 
     private var canSubmit: Bool {
-        !viewModel.isSaving && model.canSubmit  // ✅ Computed property from model
+        !isSaving && model.canSubmit
     }
 
     public var body: some View {
@@ -165,18 +173,10 @@ public struct GoalFormView: View {
                     }
                 }
             }
-
-            // Error display
-            if let errorMessage = viewModel.errorMessage {
-                Section {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                }
-            }
         }
         .formStyle(.grouped)
         .navigationTitle(formTitle)
+        .errorAlert(dataStore: dataStore)  // ✅ Unified error handling
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -220,44 +220,44 @@ public struct GoalFormView: View {
 
     private func handleSubmit() {
         Task {
+            isSaving = true
+            defer { isSaving = false }
+
             do {
+                // Assemble form data
+                let formData = GoalFormData(
+                    title: model.title,
+                    detailedDescription: model.detailedDescription,
+                    freeformNotes: model.freeformNotes,
+                    expectationImportance: model.importance,
+                    expectationUrgency: model.urgency,
+                    startDate: model.startDate,
+                    targetDate: model.targetDate,
+                    actionPlan: model.actionPlan.isEmpty ? nil : model.actionPlan,
+                    expectedTermLength: model.expectedTermLength,
+                    measureTargets: model.measureTargets,
+                    valueAlignments: model.valueAlignments,
+                    termId: model.selectedTermId
+                )
+
                 if let goalData = goalToEdit {
                     // Update existing goal
-                    _ = try await viewModel.update(
-                        goalData: goalData,
-                        title: model.title,
-                        detailedDescription: model.detailedDescription,
-                        freeformNotes: model.freeformNotes,
-                        expectationImportance: model.importance,
-                        expectationUrgency: model.urgency,
-                        startDate: model.startDate,
-                        targetDate: model.targetDate,
-                        actionPlan: model.actionPlan.isEmpty ? nil : model.actionPlan,
-                        expectedTermLength: model.expectedTermLength,
-                        measureTargets: model.measureTargets,
-                        valueAlignments: model.valueAlignments,
-                        termId: model.selectedTermId
+                    _ = try await dataStore.updateGoal(
+                        id: goalData.id,
+                        from: formData,
+                        existing: goalData
                     )
                 } else {
                     // Create new goal
-                    _ = try await viewModel.save(
-                        title: model.title,
-                        detailedDescription: model.detailedDescription,
-                        freeformNotes: model.freeformNotes,
-                        expectationImportance: model.importance,
-                        expectationUrgency: model.urgency,
-                        startDate: model.startDate,
-                        targetDate: model.targetDate,
-                        actionPlan: model.actionPlan.isEmpty ? nil : model.actionPlan,
-                        expectedTermLength: model.expectedTermLength,
-                        measureTargets: model.measureTargets,
-                        valueAlignments: model.valueAlignments,
-                        termId: model.selectedTermId
-                    )
+                    _ = try await dataStore.createGoal(from: formData)
                 }
+
+                // Success! DataStore automatically updated the list
+                // Form closes, list view sees new data immediately
                 dismiss()
             } catch {
-                // Error already set in viewModel.errorMessage
+                // Error displayed automatically via dataStore.errorMessage
+                print("❌ GoalFormView: Save failed - \(error)")
             }
         }
     }

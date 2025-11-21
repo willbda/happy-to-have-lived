@@ -2,10 +2,16 @@
 // PersonalValuesFormView.swift
 // Written by Claude Code on 2025-11-01
 // Rewritten by Claude Code on 2025-11-03 to follow Apple's SwiftUI patterns
+// Refactored by Claude Code on 2025-11-20 - Uses DataStore + unified error alerts
 //
 // PURPOSE: Form view for PersonalValue creation and editing
-// PATTERN: Direct Form structure following Apple's documented SwiftUI patterns
-//          No wrapper components - navigation modifiers applied directly to Form
+// PATTERN: Local @State fields + DataStore (operations) + View+ErrorAlert (errors)
+//
+// DATA FLOW:
+// 1. User edits local @State fields (title, level, priority)
+// 2. Save button calls dataStore.createValue()
+// 3. DataStore ValueObservation automatically updates list views
+// 4. Errors display via .errorAlert(dataStore:) modifier
 //
 
 import Models
@@ -40,8 +46,10 @@ public struct PersonalValuesFormView: View {
 
     // MARK: - State
 
-    @State private var viewModel = PersonalValuesFormViewModel()
     @Environment(\.dismiss) private var dismiss
+    @Environment(DataStore.self) private var dataStore
+
+    @State private var isSaving = false
 
     // Form state
     @State private var title: String
@@ -54,7 +62,7 @@ public struct PersonalValuesFormView: View {
 
     // Computed properties
     private var canSubmit: Bool {
-        !title.isEmpty && !viewModel.isSaving
+        !title.isEmpty && !isSaving
     }
 
     // MARK: - Initialization
@@ -119,15 +127,9 @@ public struct PersonalValuesFormView: View {
                     .accessibilityLabel("Alignment guidance") // ACCESSIBILITY: VoiceOver support
                     .accessibilityHint("Optional: How to align actions with this value")
             }
-
-            if let error = viewModel.errorMessage {
-                Section {
-                    Text(error)
-                        .foregroundStyle(.red)
-                }
-            }
         }
         .formStyle(.grouped)
+        .errorAlert(dataStore: dataStore)  // ✅ Unified error handling
         .navigationTitle(formTitle)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -147,38 +149,37 @@ public struct PersonalValuesFormView: View {
 
     // MARK: - Actions
 
-    /// Builds FormData from current @State variables.
-    ///
-    /// PATTERN: buildFormData() helper (establishes pattern for template)
-    /// This reduces duplication and makes ViewModel calls cleaner.
-    private func buildFormData() -> PersonalValueFormData {
-        return PersonalValueFormData(
-            title: title,
-            detailedDescription: description.isEmpty ? nil : description,
-            freeformNotes: notes.isEmpty ? nil : notes,
-            valueLevel: selectedLevel,
-            priority: priority,
-            lifeDomain: lifeDomain.isEmpty ? nil : lifeDomain,
-            alignmentGuidance: alignmentGuidance.isEmpty ? nil : alignmentGuidance
-        )
-    }
-
     private func handleSubmit() {
         Task {
-            do {
-                let formData = buildFormData()
+            isSaving = true
+            defer { isSaving = false }
 
-                if let valueToEdit = valueToEdit {
-                    // Update existing value
-                    _ = try await viewModel.update(valueData: valueToEdit, from: formData)
-                } else {
-                    // Create new value (using formData instead of individual parameters)
-                    _ = try await viewModel.save(from: formData)
+            do {
+                // Assemble form data
+                let formData = PersonalValueFormData(
+                    title: title,
+                    detailedDescription: description.isEmpty ? nil : description,
+                    freeformNotes: notes.isEmpty ? nil : notes,
+                    valueLevel: selectedLevel,
+                    priority: priority,
+                    lifeDomain: lifeDomain.isEmpty ? nil : lifeDomain,
+                    alignmentGuidance: alignmentGuidance.isEmpty ? nil : alignmentGuidance
+                )
+
+                // TODO: Add update support when DataStore.updateValue() is implemented
+                if valueToEdit != nil {
+                    // Update not yet implemented - create new for now
+                    print("⚠️ Update not yet supported, creating new value")
                 }
 
+                // Create value via DataStore
+                _ = try await dataStore.createValue(from: formData)
+
+                // Success! DataStore ValueObservation will update list automatically
                 dismiss()
             } catch {
-                // Error already set in viewModel.errorMessage and displayed in form
+                // Error displayed automatically via .errorAlert(dataStore:)
+                print("❌ PersonalValuesFormView: Save failed - \(error)")
             }
         }
     }

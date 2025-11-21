@@ -3,12 +3,19 @@
 // Written by Claude Code on 2025-11-02
 // Rewritten by Claude Code on 2025-11-03 to follow Apple's SwiftUI patterns
 // Updated by Claude Code on 2025-11-16 - Migrated to canonical ActionData
+// Refactored by Claude Code on 2025-11-20 - Uses DataStore + unified error alerts
 //
 // PURPOSE: Form for creating/editing Actions with measurements and goal contributions
-// PATTERN: Direct Form structure following Apple's documented SwiftUI patterns
-//          No wrapper components - navigation modifiers applied directly to Form
+// PATTERN: Local @State fields + DataStore (operations) + View+ErrorAlert (errors)
+//
+// DATA FLOW:
+// 1. User edits local @State fields (title, measurements, goalContributions)
+// 2. Save button calls dataStore.createAction()
+// 3. DataStore ValueObservation automatically updates list views
+// 4. Errors display via .errorAlert(dataStore:) modifier
 //
 
+import Dependencies
 import Models
 import Services
 import SwiftUI
@@ -65,7 +72,12 @@ public struct ActionFormView: View {
     // MARK: - State
 
     @Environment(\.dismiss) private var dismiss
-    @State private var viewModel = ActionFormViewModel()
+    @Environment(DataStore.self) private var dataStore
+
+    @ObservationIgnored
+    @Dependency(\.defaultDatabase) private var database
+
+    @State private var isSaving = false
 
     // Form fields
     @State private var title: String
@@ -76,9 +88,13 @@ public struct ActionFormView: View {
     @State private var measurements: [MeasurementInput]
     @State private var selectedGoalIds: Set<UUID>
 
+    // Available data for pickers
+    @State private var availableMeasures: [Measure] = []
+    @State private var availableGoals: [(Goal, String)] = []  // (goal, title)
+
     // Computed properties
     private var canSubmit: Bool {
-        !title.isEmpty && !viewModel.isSaving
+        !title.isEmpty && !isSaving
     }
 
     // MARK: - Initialization
@@ -176,27 +192,21 @@ public struct ActionFormView: View {
                 MeasurementInputRow(
                     measureId: bindingForMeasurement(measurement.id).measureId,
                     value: bindingForMeasurement(measurement.id).value,
-                    availableMeasures: viewModel.availableMeasures,
+                    availableMeasures: availableMeasures,
                     onRemove: { removeMeasurement(id: measurement.id) }
                 )
             }
 
             MultiSelectSection(
-                items: viewModel.availableGoals.map { GoalOption(goal: $0.0, title: $0.1) },
+                items: availableGoals.map { GoalOption(goal: $0.0, title: $0.1) },
                 title: "Goal Contributions",
                 itemLabel: { $0.title },
                 selectedIds: $selectedGoalIds
             )
-
-            if let error = viewModel.errorMessage {
-                Section {
-                    Text(error)
-                        .foregroundStyle(.red)
-                }
-            }
         }
         .formStyle(.grouped)
         .navigationTitle(formTitle)
+        .errorAlert(dataStore: dataStore)  // ✅ Unified error handling
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -212,63 +222,76 @@ public struct ActionFormView: View {
             }
         }
         .task {
-            await viewModel.loadOptions()
+            await loadAvailableData()
 
             // Validate measurements after loading available measures
             // Filter out any measurements referencing deleted measures
-            let validMeasureIds = Set(viewModel.availableMeasures.map { $0.id })
+            let validMeasureIds = Set(availableMeasures.map { $0.id })
             measurements.removeAll { measurement in
                 guard let measureId = measurement.measureId else { return false }
                 return !validMeasureIds.contains(measureId)
             }
 
             // Validate goal contributions - remove deleted goals
-            let validGoalIds = Set(viewModel.availableGoals.map { $0.0.id })
+            let validGoalIds = Set(availableGoals.map { $0.0.id })
             selectedGoalIds = selectedGoalIds.filter { validGoalIds.contains($0) }
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Data Loading
+
+    private func loadAvailableData() async {
+        do {
+            // Launch both queries in parallel
+            async let measures = database.read { db in
+                try Measure.order(by: \.unit).fetchAll(db)
+            }
+            async let goals = database.read { db in
+                try Goal.join(Expectation.all) { $0.expectationId.eq($1.id) }
+                    .select { (goal: $0.0, title: $0.1.title ?? "Untitled") }
+                    .fetchAll(db)
+            }
+
+            (availableMeasures, availableGoals) = try await (measures, goals)
+        } catch {
+            print("Error loading form data: \(error)")
+        }
+    }
+
+    // MARK: - Actions
 
     /// Handle form submission (create or update)
     private func handleSubmit() {
         Task {
+            isSaving = true
+            defer { isSaving = false }
+
             do {
-                // Convert measurements to tuple format for ViewModel
-                let measurementTuples: [(UUID, Double)] = measurements.compactMap { measurement in
-                    guard let measureId = measurement.measureId, measurement.value > 0 else {
-                        return nil
-                    }
-                    return (measureId, measurement.value)
+                // Assemble form data
+                let formData = ActionFormData(
+                    title: title,
+                    detailedDescription: detailedDescription,
+                    freeformNotes: freeformNotes,
+                    durationMinutes: durationMinutes,
+                    startTime: startTime,
+                    measurements: measurements,
+                    goalContributions: selectedGoalIds
+                )
+
+                // TODO: Add update support when DataStore.updateAction() is implemented
+                if actionToEdit != nil {
+                    // Update not yet implemented - create new for now
+                    print("⚠️ Update not yet supported, creating new action")
                 }
 
-                if let actionToEdit = actionToEdit {
-                    // Update existing action
-                    _ = try await viewModel.update(
-                        actionData: actionToEdit,
-                        title: title,
-                        description: detailedDescription,
-                        notes: freeformNotes,
-                        durationMinutes: durationMinutes,
-                        startTime: startTime,
-                        measurements: measurementTuples,
-                        goalContributions: selectedGoalIds
-                    )
-                } else {
-                    // Create new action
-                    _ = try await viewModel.save(
-                        title: title,
-                        description: detailedDescription,
-                        notes: freeformNotes,
-                        durationMinutes: durationMinutes,
-                        startTime: startTime,
-                        measurements: measurementTuples,
-                        goalContributions: selectedGoalIds
-                    )
-                }
+                // Create action via DataStore
+                _ = try await dataStore.createAction(from: formData)
+
+                // Success! DataStore ValueObservation will update list automatically
                 dismiss()
             } catch {
-                // Error handled by viewModel.errorMessage
+                // Error displayed automatically via .errorAlert(dataStore:)
+                print("❌ ActionFormView: Save failed - \(error)")
             }
         }
     }

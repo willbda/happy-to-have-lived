@@ -16,6 +16,7 @@ import Services  // EmbeddingBackfillService for background embedding generation
 struct HappyToHaveLivedApp: App {
     @State private var isPerformingInitialSync = false
     @State private var dataStore: DataStore?  // ← Created after database is ready
+    @State private var navigationCoordinator = NavigationCoordinator()  // ← Navigation state
 
     init() {
         // Initialize database and CloudKit sync
@@ -28,8 +29,9 @@ struct HappyToHaveLivedApp: App {
         WindowGroup {
             Group {
                 if let dataStore {
-                    ContentView()
+                    HomeView()
                         .environment(dataStore)  // ← Inject store into environment
+                        .environment(navigationCoordinator)  // ← Inject navigation coordinator
                 } else {
                     // Show loading state while DataStore initializes
                     ProgressView("Initializing...")

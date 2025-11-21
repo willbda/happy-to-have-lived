@@ -672,12 +672,12 @@ public final class DataStore {
 
         do {
             let coordinator = MilestoneCoordinator(database: database)
-            try await coordinator.delete(milestoneData)
+            try await coordinator.delete(milestoneId: milestoneData.id)
 
             milestones.removeAll { $0.id == milestoneData.id }
             errorMessage = nil
 
-            print("✅ DataStore: Deleted milestone '\(milestoneData.title ?? \"\")'")
+            print("✅ DataStore: Deleted milestone '\(milestoneData.expectation.title ?? "")'")
         } catch {
             errorMessage = error.localizedDescription
             print("❌ DataStore: Failed to delete milestone - \(error)")
@@ -742,12 +742,12 @@ public final class DataStore {
 
         do {
             let coordinator = ObligationCoordinator(database: database)
-            try await coordinator.delete(obligationData)
+            try await coordinator.delete(obligationId: obligationData.id)
 
             obligations.removeAll { $0.id == obligationData.id }
             errorMessage = nil
 
-            print("✅ DataStore: Deleted obligation '\(obligationData.title ?? \"\")'")
+            print("✅ DataStore: Deleted obligation '\(obligationData.expectation.title ?? "")'")
         } catch {
             errorMessage = error.localizedDescription
             print("❌ DataStore: Failed to delete obligation - \(error)")

@@ -43,7 +43,7 @@ public struct GoalCoachView: View {
                     }
                     .padding()
                 }
-                .onChange(of: viewModel.messages.count) { _, _ in
+                .onChange(of: viewModel.messages.last?.id) { _, _ in
                     // Auto-scroll to bottom on new message
                     if let lastMessage = viewModel.messages.last {
                         withAnimation {

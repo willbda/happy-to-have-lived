@@ -47,23 +47,7 @@ public struct GoalFormView: View {
     @State private var model: GoalFormModel
 
     // Computed properties for dropdown data (from DataStore)
-
-    /// Available measures from DataStore (for dropdowns)
-    private var availableMeasures: [Measure] {
-        dataStore.measures.map { measureData in
-            Measure(
-                unit: measureData.unit,
-                measureType: measureData.measureType,
-                title: measureData.title,
-                detailedDescription: measureData.detailedDescription,
-                freeformNotes: measureData.freeformNotes,
-                canonicalUnit: measureData.canonicalUnit,
-                conversionFactor: measureData.conversionFactor,
-                logTime: measureData.logTime,
-                id: measureData.id
-            )
-        }
-    }
+    // No mapping needed - components now accept Data types directly!
 
     /// Available values from DataStore (for dropdowns)
     private var availableValues: [PersonalValue] {
@@ -149,7 +133,7 @@ public struct GoalFormView: View {
             Section("Measurable Targets") {
                 ForEach($model.measureTargets) { $target in
                     MetricTargetRow(
-                        availableMeasures: availableMeasures,
+                        availableMeasures: dataStore.measures,
                         target: $target,
                         onRemove: {
                             model.removeMeasureTarget(id: target.id)

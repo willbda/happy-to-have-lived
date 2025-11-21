@@ -27,7 +27,7 @@ import SwiftUI
 ///
 /// PATTERN: Similar to MeasurementInputRow but with notes field
 public struct MetricTargetRow: View {
-    let availableMeasures: [Measure]
+    let availableMeasures: [MeasureData]
     @Binding var target: ExpectationMeasureFormData
     let onRemove: () -> Void
     let onMeasureCreated: (() async -> Void)?
@@ -39,7 +39,7 @@ public struct MetricTargetRow: View {
     @State private var isCreating = false
 
     public init(
-        availableMeasures: [Measure],
+        availableMeasures: [MeasureData],
         target: Binding<ExpectationMeasureFormData>,
         onRemove: @escaping () -> Void = {},
         onMeasureCreated: (() async -> Void)? = nil
@@ -241,9 +241,39 @@ public struct MetricTargetRow: View {
         Section("Metric Targets") {
             MetricTargetRow(
                 availableMeasures: [
-                    Measure(unit: "km", measureType: "distance", title: "Distance (km)"),
-                    Measure(unit: "minutes", measureType: "time", title: "Duration (minutes)"),
-                    Measure(unit: "occasions", measureType: "count", title: "Sessions")
+                    MeasureData(
+                        id: UUID(),
+                        title: "Distance (km)",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "km",
+                        measureType: "distance",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    ),
+                    MeasureData(
+                        id: UUID(),
+                        title: "Duration (minutes)",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "minutes",
+                        measureType: "time",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    ),
+                    MeasureData(
+                        id: UUID(),
+                        title: "Sessions",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "occasions",
+                        measureType: "count",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    )
                 ],
                 target: .constant(ExpectationMeasureFormData(
                     measureId: UUID(),
@@ -261,7 +291,17 @@ public struct MetricTargetRow: View {
         Section("Metric Targets") {
             MetricTargetRow(
                 availableMeasures: [
-                    Measure(unit: "km", measureType: "distance", title: "Distance")
+                    MeasureData(
+                        id: UUID(),
+                        title: "Distance",
+                        detailedDescription: nil,
+                        freeformNotes: nil,
+                        logTime: Date(),
+                        unit: "km",
+                        measureType: "distance",
+                        canonicalUnit: nil,
+                        conversionFactor: nil
+                    )
                 ],
                 target: .constant(ExpectationMeasureFormData()),
                 onRemove: { print("Removed") }

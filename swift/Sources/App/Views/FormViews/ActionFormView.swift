@@ -246,13 +246,16 @@ public struct ActionFormView: View {
             async let measures = database.read { db in
                 try Measure.order(by: \.unit).fetchAll(db)
             }
-            async let goals = database.read { db in
+            async let goalsWithExpectations = database.read { db in
                 try Goal.join(Expectation.all) { $0.expectationId.eq($1.id) }
-                    .select { (goal: $0.0, title: $0.1.title ?? "Untitled") }
                     .fetchAll(db)
             }
 
-            (availableMeasures, availableGoals) = try await (measures, goals)
+            availableMeasures = try await measures
+
+            // Map joined results to (Goal, String) tuples
+            let joined = try await goalsWithExpectations
+            availableGoals = joined.map { (goal: $0.0, title: $0.1.title ?? "Untitled") }
         } catch {
             print("Error loading form data: \(error)")
         }

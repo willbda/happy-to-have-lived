@@ -56,7 +56,7 @@ public final class MeasureRepository: BaseRepository<MeasureData> {
 
     // MARK: - Required Overrides
 
-    /// Fetch all measures
+    /// Fetch all measures (synchronous, required by BaseRepository)
     ///
     /// **Implementation Strategy**: Simple SELECT query
     /// - No JSON aggregation needed (Measure has no relationships)
@@ -70,26 +70,24 @@ public final class MeasureRepository: BaseRepository<MeasureData> {
     /// FROM measures
     /// ORDER BY measureType ASC, unit ASC
     /// ```
-    public override func fetchAll() async throws -> [MeasureData] {
-        try await read { db in
-            let sql = """
-                SELECT
-                    m.id,
-                    m.title,
-                    m.detailedDescription,
-                    m.freeformNotes,
-                    m.logTime,
-                    m.unit,
-                    m.measureType,
-                    m.canonicalUnit,
-                    m.conversionFactor
-                FROM measures m
-                ORDER BY m.measureType ASC, m.unit ASC
-                """
+    public override func fetchAll(_ db: Database) throws -> [MeasureData] {
+        let sql = """
+            SELECT
+                m.id,
+                m.title,
+                m.detailedDescription,
+                m.freeformNotes,
+                m.logTime,
+                m.unit,
+                m.measureType,
+                m.canonicalUnit,
+                m.conversionFactor
+            FROM measures m
+            ORDER BY m.measureType ASC, m.unit ASC
+            """
 
-            let rows = try MeasureQueryRow.fetchAll(db, sql: sql)
-            return rows.map { self.assembleMeasureData(from: $0) }
-        }
+        let rows = try MeasureQueryRow.fetchAll(db, sql: sql)
+        return rows.map { self.assembleMeasureData(from: $0) }
     }
 
     /// Check if measure exists by ID

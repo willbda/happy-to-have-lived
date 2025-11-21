@@ -74,9 +74,6 @@ public struct ActionFormView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(DataStore.self) private var dataStore
 
-    @ObservationIgnored
-    @Dependency(\.defaultDatabase) private var database
-
     @State private var isSaving = false
 
     // Form fields
@@ -88,13 +85,42 @@ public struct ActionFormView: View {
     @State private var measurements: [MeasurementInput]
     @State private var selectedGoalIds: Set<UUID>
 
-    // Available data for pickers
-    @State private var availableMeasures: [Measure] = []
-    @State private var availableGoals: [(Goal, String)] = []  // (goal, title)
-
     // Computed properties
     private var canSubmit: Bool {
         !title.isEmpty && !isSaving
+    }
+
+    /// Available measures from DataStore (for dropdowns)
+    private var availableMeasures: [Measure] {
+        dataStore.measures.map { measureData in
+            Measure(
+                unit: measureData.unit,
+                measureType: measureData.measureType,
+                title: measureData.title,
+                detailedDescription: measureData.detailedDescription,
+                freeformNotes: measureData.freeformNotes,
+                canonicalUnit: measureData.canonicalUnit,
+                conversionFactor: measureData.conversionFactor,
+                logTime: measureData.logTime,
+                id: measureData.id
+            )
+        }
+    }
+
+    /// Available goals from DataStore (for dropdowns)
+    private var availableGoals: [(Goal, String)] {
+        dataStore.goals.map { goalData in
+            let goal = Goal(
+                expectationId: goalData.expectationId,
+                startDate: goalData.startDate,
+                targetDate: goalData.targetDate,
+                actionPlan: goalData.actionPlan,
+                expectedTermLength: goalData.expectedTermLength,
+                id: goalData.id
+            )
+            let title = goalData.title ?? "Untitled"
+            return (goal, title)
+        }
     }
 
     // MARK: - Initialization
@@ -222,10 +248,8 @@ public struct ActionFormView: View {
             }
         }
         .task {
-            await loadAvailableData()
-
-            // Validate measurements after loading available measures
-            // Filter out any measurements referencing deleted measures
+            // Validate measurements - filter out any referencing deleted measures
+            // (DataStore already has measures loaded via ValueObservation)
             let validMeasureIds = Set(availableMeasures.map { $0.id })
             measurements.removeAll { measurement in
                 guard let measureId = measurement.measureId else { return false }
@@ -233,31 +257,9 @@ public struct ActionFormView: View {
             }
 
             // Validate goal contributions - remove deleted goals
+            // (DataStore already has goals loaded via ValueObservation)
             let validGoalIds = Set(availableGoals.map { $0.0.id })
             selectedGoalIds = selectedGoalIds.filter { validGoalIds.contains($0) }
-        }
-    }
-
-    // MARK: - Data Loading
-
-    private func loadAvailableData() async {
-        do {
-            // Launch both queries in parallel
-            async let measures = database.read { db in
-                try Measure.order(by: \.unit).fetchAll(db)
-            }
-            async let goalsWithExpectations = database.read { db in
-                try Goal.join(Expectation.all) { $0.expectationId.eq($1.id) }
-                    .fetchAll(db)
-            }
-
-            availableMeasures = try await measures
-
-            // Map joined results to (Goal, String) tuples
-            let joined = try await goalsWithExpectations
-            availableGoals = joined.map { (goal: $0.0, title: $0.1.title ?? "Untitled") }
-        } catch {
-            print("Error loading form data: \(error)")
         }
     }
 

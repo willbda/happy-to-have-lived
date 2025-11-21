@@ -79,6 +79,9 @@ public final class DataStore {
     /// All obligations in the app
     public var obligations: [ObligationWithDetails] = []
 
+    /// All measures (catalog of measurement units)
+    public var measures: [MeasureData] = []
+
     /// Loading state for UI feedback
     public var isLoading: Bool = false
 
@@ -268,6 +271,23 @@ public final class DataStore {
                 receiveValue: { [weak self] newObligations in
                     self?.obligations = newObligations
                     print("🔄 Obligations updated: \(newObligations.count)")
+                }
+            )
+            .store(in: &cancellables)
+
+        // Measures observation
+        MeasureRepository(database: database)
+            .observeAll()
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Measures observation failed: \(error)")
+                    }
+                },
+                receiveValue: { [weak self] newMeasures in
+                    self?.measures = newMeasures
+                    print("🔄 Measures updated: \(newMeasures.count)")
                 }
             )
             .store(in: &cancellables)

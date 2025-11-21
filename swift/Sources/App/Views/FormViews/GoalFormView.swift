@@ -46,13 +46,46 @@ public struct GoalFormView: View {
 
     @State private var model: GoalFormModel
 
-    // Available data for pickers (not part of form state)
-    @ObservationIgnored
-    @Dependency(\.defaultDatabase) private var database
+    // Computed properties for dropdown data (from DataStore)
 
-    @State private var availableMeasures: [Measure] = []
-    @State private var availableValues: [PersonalValue] = []
-    @State private var availableTerms: [TimePeriodData] = []
+    /// Available measures from DataStore (for dropdowns)
+    private var availableMeasures: [Measure] {
+        dataStore.measures.map { measureData in
+            Measure(
+                unit: measureData.unit,
+                measureType: measureData.measureType,
+                title: measureData.title,
+                detailedDescription: measureData.detailedDescription,
+                freeformNotes: measureData.freeformNotes,
+                canonicalUnit: measureData.canonicalUnit,
+                conversionFactor: measureData.conversionFactor,
+                logTime: measureData.logTime,
+                id: measureData.id
+            )
+        }
+    }
+
+    /// Available values from DataStore (for dropdowns)
+    private var availableValues: [PersonalValue] {
+        dataStore.values.map { valueData in
+            PersonalValue(
+                title: valueData.title,
+                detailedDescription: valueData.detailedDescription,
+                freeformNotes: valueData.freeformNotes,
+                priority: valueData.priority,
+                valueLevel: ValueLevel(rawValue: valueData.valueLevel) ?? .general,
+                lifeDomain: valueData.lifeDomain,
+                alignmentGuidance: valueData.alignmentGuidance,
+                logTime: valueData.logTime,
+                id: valueData.id
+            )
+        }
+    }
+
+    /// Available terms from DataStore (already TimePeriodData)
+    private var availableTerms: [TimePeriodData] {
+        dataStore.terms
+    }
 
     // MARK: - Edit Mode Support
 
@@ -120,10 +153,8 @@ public struct GoalFormView: View {
                         target: $target,
                         onRemove: {
                             model.removeMeasureTarget(id: target.id)
-                        },
-                        onMeasureCreated: {
-                            await loadAvailableData()
                         }
+                        // onMeasureCreated removed - DataStore ValueObservation auto-updates measures
                     )
                 }
 
@@ -189,30 +220,6 @@ public struct GoalFormView: View {
                 }
                 .disabled(!canSubmit)
             }
-        }
-        .task {
-            await loadAvailableData()
-        }
-    }
-
-    // MARK: - Data Loading
-
-    private func loadAvailableData() async {
-        do {
-            // Launch all three queries in parallel
-            async let measures = database.read { db in
-                try Measure.order(by: \.unit).fetchAll(db)
-            }
-            async let values = database.read { db in
-                try PersonalValue.order { $0.priority.desc() }.fetchAll(db)
-            }
-
-            let repository = TimePeriodRepository(database: database)
-            async let terms = repository.fetchAll()
-
-            (availableMeasures, availableValues, availableTerms) = try await (measures, values, terms)
-        } catch {
-            print("Error loading form data: \(error)")
         }
     }
 

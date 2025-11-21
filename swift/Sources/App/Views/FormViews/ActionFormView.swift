@@ -25,12 +25,10 @@ import SwiftUI
 /// Wrapper for goal selection in MultiSelectSection
 private struct GoalOption: Identifiable {
     let id: UUID
-    let goal: Goal
     let title: String
 
-    init(goal: Goal, title: String) {
-        self.id = goal.id
-        self.goal = goal
+    init(id: UUID, title: String) {
+        self.id = id
         self.title = title
     }
 }
@@ -88,9 +86,15 @@ public struct ActionFormView: View {
     @State private var measurements: [MeasurementInput]
     @State private var selectedGoalIds: Set<UUID>
 
-    // Available data for pickers
+    // Available data for pickers (loaded from DataStore)
     @State private var availableMeasures: [Measure] = []
-    @State private var availableGoals: [(Goal, String)] = []  // (goal, title)
+
+    // Goals loaded from DataStore.goals (already in memory)
+    private var availableGoals: [(UUID, String)] {
+        dataStore.goals.map { goalData in
+            (goalData.id, goalData.title ?? "Untitled")
+        }
+    }
 
     // Computed properties
     private var canSubmit: Bool {
@@ -198,7 +202,7 @@ public struct ActionFormView: View {
             }
 
             MultiSelectSection(
-                items: availableGoals.map { GoalOption(goal: $0.0, title: $0.1) },
+                items: availableGoals.map { GoalOption(id: $0.0, title: $0.1) },
                 title: "Goal Contributions",
                 itemLabel: { $0.title },
                 selectedIds: $selectedGoalIds
@@ -233,7 +237,7 @@ public struct ActionFormView: View {
             }
 
             // Validate goal contributions - remove deleted goals
-            let validGoalIds = Set(availableGoals.map { $0.0.id })
+            let validGoalIds = Set(availableGoals.map { $0.0 })
             selectedGoalIds = selectedGoalIds.filter { validGoalIds.contains($0) }
         }
     }
@@ -242,20 +246,11 @@ public struct ActionFormView: View {
 
     private func loadAvailableData() async {
         do {
-            // Launch both queries in parallel
-            async let measures = database.read { db in
+            // Load measures from database
+            // (Goals come from DataStore.goals, already in memory)
+            availableMeasures = try await database.read { db in
                 try Measure.order(by: \.unit).fetchAll(db)
             }
-            async let goalsWithExpectations = database.read { db in
-                try Goal.join(Expectation.all) { $0.expectationId.eq($1.id) }
-                    .fetchAll(db)
-            }
-
-            availableMeasures = try await measures
-
-            // Map joined results to (Goal, String) tuples
-            let joined = try await goalsWithExpectations
-            availableGoals = joined.map { (goal: $0.0, title: $0.1.title ?? "Untitled") }
         } catch {
             print("Error loading form data: \(error)")
         }

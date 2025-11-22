@@ -69,16 +69,15 @@ public struct HomeView: View {
                 // Three separate sections - cleaner separation
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Hero Section - image extends into safe area, text respects it
+                        // Hero Section - fully respects safe areas
                         ZStack(alignment: .bottomLeading) {
                             Image("Mountains4")
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(height: 300)
                                 .clipped()
-                                .ignoresSafeArea(edges: .top)  // Only image ignores top
 
-                            // Simple greeting overlay - respects all safe areas
+                            // Simple greeting overlay
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(timeBasedGreeting)
                                     .font(.title3)

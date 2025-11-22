@@ -43,6 +43,8 @@ public struct HomeView: View {
 
     @State private var showingLogAction = false
     @State private var actionToEdit: ActionData?
+    @State private var actionToDelete: ActionData?
+    @State private var goalToDelete: GoalData?
     @State private var greetingData: GreetingData?
     @State private var isLoadingGreeting = false
 
@@ -143,6 +145,38 @@ public struct HomeView: View {
                         ActionFormView(actionToEdit: actionData)
                     }
                 }
+                .background(.background)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .offset(y: -16)  // Overlap hero slightly
+            }
+            .ignoresSafeArea(edges: .top)
+            .task {
+                // Generate greeting on view appear
+                await generateGreeting()
+            }
+            .toolbar {
+                homeToolbarItems
+            }
+            .alert("Delete Goal", isPresented: .constant(goalToDelete != nil), presenting: goalToDelete) { goalData in
+                Button("Cancel", role: .cancel) {
+                    goalToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    deleteGoal(goalData)
+                }
+            } message: { goalData in
+                Text("Are you sure you want to delete '\(goalData.title ?? "this goal")'?")
+            }
+            .alert("Delete Action", isPresented: .constant(actionToDelete != nil), presenting: actionToDelete) { actionData in
+                Button("Cancel", role: .cancel) {
+                    actionToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    deleteAction(actionData)
+                }
+            } message: { actionData in
+                Text("Are you sure you want to delete '\(actionData.title ?? "this action")'?")
+            }
             }  // NavigationContainer
         }  // NavigationStack
     }
@@ -380,6 +414,21 @@ public struct HomeView: View {
         .onTapGesture {
             navigationCoordinator.navigateToGoal(goalData.id)
         }
+        .contextMenu {
+            Button {
+                navigationCoordinator.navigateToGoal(goalData.id)
+            } label: {
+                Label("View Details", systemImage: "eye")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                goalToDelete = goalData
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private func actionRow(for actionData: ActionData) -> some View {
@@ -437,6 +486,36 @@ public struct HomeView: View {
         .onTapGesture {
             actionToEdit = actionData
         }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                actionToDelete = actionData
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                actionToEdit = actionData
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
+        .contextMenu {
+            Button {
+                actionToEdit = actionData
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                actionToDelete = actionData
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     // MARK: - Helper Methods
@@ -475,6 +554,22 @@ public struct HomeView: View {
         }
 
         isLoadingGreeting = false
+    }
+
+    /// Delete goal with confirmation
+    private func deleteGoal(_ goalData: GoalData) {
+        Task {
+            try? await dataStore.deleteGoal(goalData)
+            goalToDelete = nil
+        }
+    }
+
+    /// Delete action with confirmation
+    private func deleteAction(_ actionData: ActionData) {
+        Task {
+            try? await dataStore.deleteAction(actionData)
+            actionToDelete = nil
+        }
     }
 
     // MARK: - Toolbar

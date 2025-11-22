@@ -135,27 +135,16 @@ public struct HomeView: View {
                 .toolbar {
                     homeToolbarItems
                 }
-                .sheet(isPresented: $showingLogAction) {
-                    NavigationStack {
-                        ActionFormView()
-                    }
+            }  // NavigationContainer
+            .sheet(isPresented: $showingLogAction) {
+                NavigationStack {
+                    ActionFormView()
                 }
-                .sheet(item: $actionToEdit) { actionData in
-                    NavigationStack {
-                        ActionFormView(actionToEdit: actionData)
-                    }
+            }
+            .sheet(item: $actionToEdit) { actionData in
+                NavigationStack {
+                    ActionFormView(actionToEdit: actionData)
                 }
-                .background(.background)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .offset(y: -16)  // Overlap hero slightly
-            }
-            .ignoresSafeArea(edges: .top)
-            .task {
-                // Generate greeting on view appear
-                await generateGreeting()
-            }
-            .toolbar {
-                homeToolbarItems
             }
             .alert("Delete Goal", isPresented: .constant(goalToDelete != nil), presenting: goalToDelete) { goalData in
                 Button("Cancel", role: .cancel) {
@@ -177,7 +166,6 @@ public struct HomeView: View {
             } message: { actionData in
                 Text("Are you sure you want to delete '\(actionData.title ?? "this action")'?")
             }
-            }  // NavigationContainer
         }  // NavigationStack
     }
 
@@ -376,43 +364,59 @@ public struct HomeView: View {
             service: progressService
         )
 
-        return VStack(alignment: .leading, spacing: 12) {
-            // Progress ring with automatic vibrancy
-            ZStack {
-                Circle()
-                    .stroke(.tertiary, lineWidth: 4)
+        return ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Progress ring with automatic vibrancy
+                ZStack {
+                    Circle()
+                        .stroke(.tertiary, lineWidth: 4)
 
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(.tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(.tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
 
-                Text("\(Int(progress * 100))%")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.primary)
+                    Text("\(Int(progress * 100))%")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
+                }
+                .frame(width: 60, height: 60)
+
+                // Goal info with automatic vibrancy
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(goalData.title ?? "Untitled Goal")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+
+                    // Declarative: GoalData computed property handles formatting
+                    Text(goalData.formattedTargetDate)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .frame(width: 60, height: 60)
-
-            // Goal info with automatic vibrancy
-            VStack(alignment: .leading, spacing: 4) {
-                Text(goalData.title ?? "Untitled Goal")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-
-                // Declarative: GoalData computed property handles formatting
-                Text(goalData.formattedTargetDate)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            .frame(width: 160)
+            .padding()
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .onTapGesture {
+                navigationCoordinator.navigateToGoal(goalData.id)
             }
-        }
-        .frame(width: 160)
-        .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture {
-            navigationCoordinator.navigateToGoal(goalData.id)
+
+            #if os(macOS)
+            // macOS-specific: visible delete button in corner
+            Button(role: .destructive) {
+                goalToDelete = goalData
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red, .white)
+                    .imageScale(.medium)
+            }
+            .buttonStyle(.plain)
+            .help("Delete goal")
+            .padding(8)
+            #endif
         }
         .contextMenu {
             Button {
@@ -478,6 +482,18 @@ public struct HomeView: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+
+            #if os(macOS)
+            // macOS-specific: visible delete button
+            Button(role: .destructive) {
+                actionToDelete = actionData
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+            .help("Delete action")
+            #endif
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -578,6 +594,7 @@ public struct HomeView: View {
     ///
     /// **Pattern**: Declarative @ToolbarContentBuilder for reusability
     /// **Actions**: All menu items use type-safe NavigationRoute
+    /// **Organization**: Grouped by function (Data, Sync, Maintenance, System)
     @ToolbarContentBuilder
     private var homeToolbarItems: some ToolbarContent {
         // Add Action button (persistent, always visible)
@@ -589,38 +606,63 @@ public struct HomeView: View {
                     .imageScale(.large)
                     .foregroundStyle(.blue)
             }
+            .help("Log Action")
         }
 
-        // Menu button
+        // Menu button (organized by feature category)
         ToolbarItem(placement: .automatic) {
             Menu {
-                Button {
-                    navigationCoordinator.navigate(to: .settings)
-                } label: {
-                    Label("Settings", systemImage: "gear")
+                // Data Management Section
+                Section("Data") {
+                    Button {
+                        navigationCoordinator.navigate(to: .exportData)
+                    } label: {
+                        Label("Import/Export CSV", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        navigationCoordinator.navigate(to: .reviewDuplicates)
+                    } label: {
+                        Label("Review Duplicates", systemImage: "doc.on.doc")
+                    }
+
+                    Button {
+                        navigationCoordinator.navigate(to: .archives)
+                    } label: {
+                        Label("Archives", systemImage: "archivebox")
+                    }
                 }
 
-                Button {
-                    navigationCoordinator.navigate(to: .exportData)
-                } label: {
-                    Label("Export Data", systemImage: "square.and.arrow.up")
+                // Sync Section
+                Section("Sync") {
+                    Button {
+                        navigationCoordinator.navigate(to: .cloudKitSync)
+                    } label: {
+                        Label("CloudKit Sync", systemImage: "icloud")
+                    }
+
+                    #if os(iOS)
+                    Button {
+                        navigationCoordinator.navigate(to: .healthSync)
+                    } label: {
+                        Label("Import from Health", systemImage: "heart.text.square")
+                    }
+                    #endif
                 }
 
-                Button {
-                    navigationCoordinator.navigate(to: .reviewDuplicates)
-                } label: {
-                    Label("Review Duplicates", systemImage: "doc.on.doc")
-                }
-
-                Button {
-                    navigationCoordinator.navigate(to: .archives)
-                } label: {
-                    Label("Archives", systemImage: "archivebox")
+                // System Section
+                Section("System") {
+                    Button {
+                        navigationCoordinator.navigate(to: .settings)
+                    } label: {
+                        Label("Settings", systemImage: "gear")
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .imageScale(.large)
             }
+            .help("More Options")
         }
     }
 }

@@ -31,6 +31,8 @@ import Foundation
 /// - `.actionDetail(UUID)`: Navigate to specific action detail view
 /// - `.settings`: Navigate to app settings
 /// - `.exportData`: Navigate to CSV export/import
+/// - `.healthSync`: Navigate to HealthKit sync (iOS only)
+/// - `.cloudKitSync`: Navigate to CloudKit sync status
 /// - `.reviewDuplicates`: Navigate to duplicate review
 /// - `.archives`: Navigate to archived items
 public enum NavigationRoute: Hashable, Sendable {
@@ -38,6 +40,8 @@ public enum NavigationRoute: Hashable, Sendable {
     case actionDetail(UUID)
     case settings
     case exportData
+    case healthSync
+    case cloudKitSync
     case reviewDuplicates
     case archives
 }

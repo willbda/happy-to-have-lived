@@ -128,14 +128,34 @@ public final class ActionCoordinator: Sendable {
             }
 
             // 5. Insert ActionGoalContribution records for each goal
+            // Match measurements to goal targets and populate contributionAmount
             for goalId in formData.goalContributions {
+                // Query which measures this goal expects (via expectationMeasures)
+                // First get the goal's expectationId
+                guard let goal = try Goal.find(goalId).fetchOne(db) else {
+                    continue  // Skip if goal not found (already validated above)
+                }
+
+                // Query expectationMeasures for this goal's expectation
+                let expectationMeasures = try ExpectationMeasure
+                    .where { $0.expectationId.eq(goal.expectationId) }
+                    .fetchAll(db)
+
+                let expectedMeasureIds = Set(expectationMeasures.map { $0.measureId })
+
+                // Find matching measurements from this action
+                let matchingMeasurement = resolvedMeasurements.first { measurement in
+                    expectedMeasureIds.contains(measurement.measureId)
+                }
+
+                // Insert contribution with populated fields if match found
                 try ActionGoalContribution.insert {
                     ActionGoalContribution.Draft(
                         id: UUID(),
                         actionId: action.id,
                         goalId: goalId,
-                        contributionAmount: nil,  // Can be calculated later by service
-                        measureId: nil,  // Can be set when calculating progress
+                        contributionAmount: matchingMeasurement?.value,  // Auto-populate from measurement
+                        measureId: matchingMeasurement?.measureId,       // Link to specific measure
                         createdAt: Date()
                     )
                 }
@@ -303,14 +323,35 @@ public final class ActionCoordinator: Sendable {
             }
 
             // 7. Insert new ActionGoalContribution records from formData
+            // Match measurements to goal targets and populate contributionAmount
             for goalId in formData.goalContributions {
+                // Query which measures this goal expects (via expectationMeasures)
+                // First get the goal's expectationId
+                guard let goal = try Goal.find(goalId).fetchOne(db) else {
+                    continue  // Skip if goal not found (already validated above)
+                }
+
+                // Query expectationMeasures for this goal's expectation
+                let expectationMeasures = try ExpectationMeasure
+                    .where { $0.expectationId.eq(goal.expectationId) }
+                    .fetchAll(db)
+
+                let expectedMeasureIds = Set(expectationMeasures.map { $0.measureId })
+
+                // Find matching measurements from formData
+                let matchingMeasurement = formData.measurements.first { measurement in
+                    guard let measureId = measurement.measureId else { return false }
+                    return expectedMeasureIds.contains(measureId)
+                }
+
+                // Insert contribution with populated fields if match found
                 try ActionGoalContribution.insert {
                     ActionGoalContribution.Draft(
                         id: UUID(),  // New ID for new record
                         actionId: updatedAction.id,
                         goalId: goalId,
-                        contributionAmount: nil,
-                        measureId: nil,
+                        contributionAmount: matchingMeasurement?.value,  // Auto-populate from measurement
+                        measureId: matchingMeasurement?.measureId,       // Link to specific measure
                         createdAt: Date()
                     )
                 }

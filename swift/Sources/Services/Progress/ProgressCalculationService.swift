@@ -87,15 +87,19 @@ public final class ProgressCalculationService: Sendable {
 
     /// Calculate action-based progress for a goal
     ///
-    /// Compares actual measurements from actions against goal targets.
+    /// Compares actual contributions from actions against goal targets.
+    ///
+    /// **IMPORTANT**: Uses actionGoalContributions (goal-directed measurements),
+    /// NOT measuredActions (all measurements). This ensures only intentional
+    /// progress toward goals is counted.
     ///
     /// - Parameters:
     ///   - targets: Goal measure targets (from GoalData.measureTargets)
-    ///   - actions: Actions that contribute to this goal
+    ///   - actions: Actions that contribute to this goal (with contributions)
     /// - Returns: Overall action progress (0.0 to 1.0) and per-measure progress
     public func calculateActionProgress(
         targets: [MeasureTarget],
-        actions: [ActionWithMeasurements]
+        actions: [ActionWithContributions]
     ) -> (progress: Double, measureProgress: [MeasureProgress]) {
         guard !targets.isEmpty else {
             return (0.0, [])
@@ -103,14 +107,16 @@ public final class ProgressCalculationService: Sendable {
 
         var measureProgressList: [MeasureProgress] = []
 
-        // Calculate progress for each measure
+        // Calculate progress for each target measure
         for target in targets {
-            // Sum all actual measurements for this measure
+            // Sum all contributions for this measure
+            // Uses contributionAmount (goal-directed) not measurement.value (general tracking)
             let actualValue = actions.reduce(0.0) { sum, action in
-                let measurementValue = action.measurements
+                let contributionValue = action.contributions
                     .filter { $0.measureId == target.measureId }
-                    .reduce(0.0) { $0 + $1.value }
-                return sum + measurementValue
+                    .compactMap { $0.contributionAmount }  // Only sum non-nil contributions
+                    .reduce(0.0, +)
+                return sum + contributionValue
             }
 
             let progress = target.targetValue > 0
@@ -197,7 +203,7 @@ public final class ProgressCalculationService: Sendable {
     ///   - timePeriodDays: Number of days to analyze (default: 30)
     /// - Returns: Velocity (progress per day) or nil if insufficient data
     public func calculateVelocity(
-        actions: [ActionWithMeasurements],
+        actions: [ActionWithContributions],
         currentProgress: Double,
         timePeriodDays: Int = 30
     ) -> Double? {
@@ -231,7 +237,7 @@ public final class ProgressCalculationService: Sendable {
     ///   - currentDate: Reference date
     /// - Returns: Progress trend (increasing, stable, decreasing, stalled)
     public func determineTrend(
-        actions: [ActionWithMeasurements],
+        actions: [ActionWithContributions],
         lastActionDate: Date?,
         currentDate: Date = Date()
     ) -> ProgressTrend {
@@ -378,26 +384,34 @@ public struct MeasureTarget: Sendable {
     }
 }
 
-/// Simplified action with measurements for progress calculation
-public struct ActionWithMeasurements: Sendable {
+/// Simplified action with contributions for progress calculation
+///
+/// **IMPORTANT CHANGE (2025-11-21)**:
+/// Changed from `measurements` to `contributions` to use actionGoalContributions table
+/// instead of measuredActions table. This ensures only goal-directed measurements
+/// are counted toward progress.
+public struct ActionWithContributions: Sendable {
     public let id: UUID
     public let logTime: Date
-    public let measurements: [ActionMeasurement]
+    public let contributions: [ActionContribution]
 
-    public init(id: UUID, logTime: Date, measurements: [ActionMeasurement]) {
+    public init(id: UUID, logTime: Date, contributions: [ActionContribution]) {
         self.id = id
         self.logTime = logTime
-        self.measurements = measurements
+        self.contributions = contributions
     }
 }
 
-/// Simplified measurement for progress calculation
-public struct ActionMeasurement: Sendable {
-    public let measureId: UUID
-    public let value: Double
+/// Simplified contribution for progress calculation
+///
+/// Maps to actionGoalContributions table (not measuredActions).
+/// Only includes contributionAmount (not all measurements).
+public struct ActionContribution: Sendable {
+    public let measureId: UUID?           // Which measure this contributes toward
+    public let contributionAmount: Double? // How much progress made
 
-    public init(measureId: UUID, value: Double) {
+    public init(measureId: UUID?, contributionAmount: Double?) {
         self.measureId = measureId
-        self.value = value
+        self.contributionAmount = contributionAmount
     }
 }

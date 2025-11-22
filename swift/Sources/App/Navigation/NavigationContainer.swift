@@ -73,6 +73,18 @@ public struct NavigationContainer<Content: View>: View {
                 case .exportData:
                     CSVExportImportView()
 
+                case .healthSync:
+                    #if os(iOS)
+                    WorkoutsTestView()
+                    #else
+                    // HealthKit is iOS-only
+                    Text("HealthKit is only available on iOS")
+                        .navigationTitle("Health Sync")
+                    #endif
+
+                case .cloudKitSync:
+                    CloudKitSyncStatusView()
+
                 case .reviewDuplicates:
                     // TODO: Create DuplicateReviewView
                     Text("Review Duplicates")

@@ -90,7 +90,6 @@ public struct HomeView: View {
                             .shadow(radius: 4)
                             .padding()
                         }
-                        .frame(maxWidth: .infinity)  // Full width
 
                         // Active Goals Section (separate List)
                         VStack(alignment: .leading, spacing: 12) {

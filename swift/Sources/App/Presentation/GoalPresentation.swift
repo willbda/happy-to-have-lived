@@ -69,14 +69,15 @@ public struct GoalPresentation {
         )
 
         // Convert actions to service format
-        let actionMeasurements: [ActionWithMeasurements] = actions.map { action in
-            ActionWithMeasurements(
+        // IMPORTANT: Uses contributions (goal-directed), not measurements (all tracking)
+        let actionContributions: [ActionWithContributions] = actions.map { action in
+            ActionWithContributions(
                 id: action.id,
                 logTime: action.logTime,
-                measurements: action.measurements.map { measurement in
-                    ActionMeasurement(
-                        measureId: measurement.measureId,
-                        value: measurement.value
+                contributions: action.contributions.map { contribution in
+                    ActionContribution(
+                        measureId: contribution.measureId,
+                        contributionAmount: contribution.contributionAmount
                     )
                 }
             )
@@ -95,7 +96,7 @@ public struct GoalPresentation {
         // Action-based progress (70% weight)
         let actionResult = service.calculateActionProgress(
             targets: targets,
-            actions: actionMeasurements
+            actions: actionContributions
         )
 
         // Combined: 30% time + 70% action

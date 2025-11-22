@@ -14,7 +14,6 @@
 // - Platform guards: navigationBarTitleDisplayMode (iOS-only navigation API)
 //
 
-import Dependencies
 import Models
 import Services
 import SQLiteData
@@ -31,6 +30,8 @@ public struct MetricTargetRow: View {
     @Binding var target: ExpectationMeasureFormData
     let onRemove: () -> Void
     let onMeasureCreated: (() async -> Void)?
+
+    @Environment(DataStore.self) private var dataStore
 
     @State private var showingCreateMeasure = false
     @State private var newMeasureUnit = ""
@@ -188,13 +189,16 @@ public struct MetricTargetRow: View {
 
     /// Create a new measure and add it to the database
     ///
-    /// **Refactored 2025-11-17**: Now uses MeasureCoordinator.getOrCreate()
-    /// instead of direct database writes for proper duplicate prevention.
+    /// **Pattern**: Uses DataStore.createMeasure() for centralized database access
+    /// **Architecture**: UI → DataStore → MeasureCoordinator → Database
+    /// **Idempotent**: Returns existing measure if duplicate found (no error thrown)
+    /// **Error Handling**: User-friendly ValidationError messages
     ///
-    /// **Coordinator Composition**: UI calls coordinator (not direct writes)
-    /// - Idempotent: getOrCreate() returns existing measure if duplicate found
-    /// - Validation: Two-phase validation via coordinator
-    /// - Error Handling: User-friendly ValidationError messages
+    /// **Why DataStore?**
+    /// - Views (SwiftUI structs) can't use @Dependency property wrapper
+    /// - @Dependency only works on stored properties in classes
+    /// - DataStore provides single source of truth for database access
+    /// - ValueObservation automatically updates measures array
     private func createMeasure() async {
         isCreating = true
         defer { isCreating = false }
@@ -205,12 +209,8 @@ public struct MetricTargetRow: View {
         let type = newMeasureType
 
         do {
-            @Dependency(\.defaultDatabase) var database
-
-            // ✅ USE COORDINATOR (not direct database write)
-            // This is idempotent - returns existing measure if duplicate found
-            let coordinator = MeasureCoordinator(database: database)
-            let newMeasure = try await coordinator.getOrCreate(
+            // Use DataStore for database access (correct pattern for Views)
+            let newMeasure = try await dataStore.createMeasure(
                 unit: unit,
                 measureType: type,
                 title: title
@@ -219,7 +219,7 @@ public struct MetricTargetRow: View {
             // Back on MainActor context - safe to update @State properties
             target.measureId = newMeasure.id
 
-            // Notify parent to refresh available measures
+            // Notify parent (ValueObservation already updated DataStore.measures)
             await onMeasureCreated?()
 
             showingCreateMeasure = false

@@ -42,15 +42,13 @@ public struct HomeView: View {
     // MARK: - State
 
     @State private var showingLogAction = false
+    @State private var showingCreateGoal = false
     @State private var actionToEdit: ActionData?
     @State private var actionToDelete: ActionData?
     @State private var goalToDelete: GoalData?
-    @State private var greetingData: GreetingData?
-    @State private var isLoadingGreeting = false
 
-    // MARK: - Constants
-
-    private let heroHeight: CGFloat = 380  // Increased from 300 to match Calm's ~50% ratio
+    /// Track which goal sections are expanded (goalId: isExpanded)
+    @State private var expandedGoalSections: Set<UUID> = []
 
     // MARK: - Services
 
@@ -68,96 +66,147 @@ public struct HomeView: View {
 
         NavigationStack(path: $navigationCoordinator.path) {
             NavigationContainer {
+                // Three separate sections - cleaner separation
                 ScrollView {
-                    ZStack(alignment: .topLeading) {
-                        // Hero image with parallax effect
-                        GeometryReader { geometry in
-                            let minY = geometry.frame(in: .global).minY
-                            let imageHeight = max(0, heroHeight + (minY > 0 ? minY : 0))
-                            let opacity = max(0, 1 - (minY / -150))
+                    VStack(spacing: 0) {
+                        // Hero Section - image extends into safe area, text respects it
+                        ZStack(alignment: .bottomLeading) {
+                            Image("Mountains4")
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(height: 300)
+                                .clipped()
+                                .ignoresSafeArea(edges: .top)  // Only image ignores top
 
-                            // Hero image (with fallback gradient for preview)
-                            ZStack {
-                                // Background gradient (always present as fallback)
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.4, green: 0.5, blue: 0.6),
-                                        Color(red: 0.2, green: 0.3, blue: 0.4),
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                            // Simple greeting overlay - respects all safe areas
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(timeBasedGreeting)
+                                    .font(.title3)
 
-                                // Dynamic image selection based on LLM suggestion
-                                Image(selectedHeroImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
+                                Text("Here's what's happening")
+                                    .font(.largeTitle)
+                                    .fontWeight(.medium)
                             }
-                            .frame(width: geometry.size.width, height: imageHeight)
-                            .clipped()
-                            .opacity(opacity)
-                            .offset(y: minY > 0 ? -minY : 0)
-
-                            // Gradient overlay for readability
-                            LinearGradient(
-                                colors: [
-                                    .clear,
-                                    .black.opacity(0.4),
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: imageHeight)
+                            .foregroundStyle(.white)
+                            .shadow(radius: 4)
+                            .padding()
                         }
-                        .frame(height: heroHeight)
+                        .frame(maxWidth: .infinity)  // Full width
 
-                        // Greeting overlay (on hero image)
-                        greetingOverlay
+                        // Active Goals Section (separate List)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Active Goals")
+                                .font(.title2)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 24)
+
+                            if dataStore.activeGoals.isEmpty {
+                                VStack(spacing: 16) {
+                                    Text("No active goals yet")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+
+                                    Button {
+                                        showingCreateGoal = true
+                                    } label: {
+                                        Label("Create Your First Goal", systemImage: "target")
+                                            .font(.headline)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 40)
+                            } else {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 16) {
+                                        ForEach(dataStore.activeGoals.prefix(5)) { goalData in
+                                            goalCard(for: goalData)
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                }
+                            }
+                        }
+
+                        // Actions by Goal Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Recent Actions by Goal")
+                                .font(.title2)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 32)
+
+                            if dataStore.actions.isEmpty {
+                                ContentUnavailableView {
+                                    Label("No Actions Yet", systemImage: "checkmark.circle")
+                                } description: {
+                                    Text("Actions you log will appear here")
+                                }
+                                .padding(.vertical, 40)
+                            } else {
+                                // Goals with actions (collapsible sections)
+                                ForEach(goalsWithActions) { goalData in
+                                    goalActionsSection(for: goalData)
+                                }
+
+                                // Unlinked actions section (if any exist)
+                                if !unlinkedActions.isEmpty {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "minus.circle")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .frame(width: 20)
+
+                                            Text("No Goal")
+                                                .font(.headline)
+                                                .foregroundStyle(.secondary)
+
+                                            Text("(\(unlinkedActions.count))")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.tertiary)
+
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 20)
+                                        .padding(.top, 8)
+
+                                        ScrollView(.horizontal, showsIndicators: false) {
+                                            HStack(spacing: 12) {
+                                                ForEach(unlinkedActions.prefix(10)) { actionData in
+                                                    actionCard(for: actionData)
+                                                }
+                                            }
+                                            .padding(.horizontal, 20)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.bottom, 20)
                     }
-
-                    // Content sections (scroll over hero)
-                    VStack(spacing: 32) {
-                        // Active Goals Section
-                        activeGoalsSection
-
-                        // Recent Actions Section
-                        recentActionsSection
-                    }
-                    .background(.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .offset(y: -16)  // Overlap hero slightly
-                }
-                .ignoresSafeArea(edges: .top)
-                .task {
-                    // Generate greeting on view appear
-                    await generateGreeting()
                 }
                 .toolbar {
                     homeToolbarItems
                 }
-                .sheet(isPresented: $showingLogAction) {
-                    NavigationStack {
-                        ActionFormView()
-                    }
+            }  // NavigationContainer
+            .sheet(isPresented: $showingLogAction) {
+                NavigationStack {
+                    ActionFormView()
                 }
-                .sheet(item: $actionToEdit) { actionData in
-                    NavigationStack {
-                        ActionFormView(actionToEdit: actionData)
-                    }
+            }
+            .sheet(isPresented: $showingCreateGoal) {
+                NavigationStack {
+                    GoalFormView()
                 }
-                .background(.background)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .offset(y: -16)  // Overlap hero slightly
             }
-            .ignoresSafeArea(edges: .top)
-            .task {
-                // Generate greeting on view appear
-                await generateGreeting()
+            .sheet(item: $actionToEdit) { actionData in
+                NavigationStack {
+                    ActionFormView(actionToEdit: actionData)
+                }
             }
-            .toolbar {
-                homeToolbarItems
-            }
-            .alert("Delete Goal", isPresented: .constant(goalToDelete != nil), presenting: goalToDelete) { goalData in
+            .alert(
+                "Delete Goal", isPresented: .constant(goalToDelete != nil), presenting: goalToDelete
+            ) { goalData in
                 Button("Cancel", role: .cancel) {
                     goalToDelete = nil
                 }
@@ -167,7 +216,10 @@ public struct HomeView: View {
             } message: { goalData in
                 Text("Are you sure you want to delete '\(goalData.title ?? "this goal")'?")
             }
-            .alert("Delete Action", isPresented: .constant(actionToDelete != nil), presenting: actionToDelete) { actionData in
+            .alert(
+                "Delete Action", isPresented: .constant(actionToDelete != nil),
+                presenting: actionToDelete
+            ) { actionData in
                 Button("Cancel", role: .cancel) {
                     actionToDelete = nil
                 }
@@ -177,196 +229,41 @@ public struct HomeView: View {
             } message: { actionData in
                 Text("Are you sure you want to delete '\(actionData.title ?? "this action")'?")
             }
-            }  // NavigationContainer
         }  // NavigationStack
     }
 
     // MARK: - Computed Properties
 
-    /// Select hero image based on LLM suggestion or time of day
-    /// Available images: Aurora2, Aurora3, AuroraAndCarLights, BackyardTree,
-    /// BigLakeMountains, ChicagoRoses, FamilyHike, Forest, Moody, Mountains4
-    private var selectedHeroImage: String {
-        // Priority 1: LLM-suggested image (if available in asset catalog)
-        if let suggestedImage = greetingData?.suggestedHeroImage {
-            // Validate it exists in our catalog
-            let availableImages = [
-                "Aurora2", "Aurora3", "AuroraAndCarLights",
-                "BigLakeMountains", "ChicagoRoses", "FamilyHike", "Forest",
-                "Moody", "Mountains4",
-            ]
-            if availableImages.contains(suggestedImage) {
-                return suggestedImage
-            }
-        }
-
-        // Priority 2: Time-of-day based fallback using actual asset catalog images
+    /// Simple time-based greeting - no LLM complexity
+    private var timeBasedGreeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
-
         switch hour {
-        case 5..<8:
-            return "Aurora2"  // Early morning (sunrise aurora)
-        case 8..<12:
-            return "Mountains4"  // Morning (bright mountains)
+        case 5..<12:
+            return "Good morning"
         case 12..<17:
-            return "Forest"  // Afternoon (green forest)
-        case 17..<20:
-            return "Moody"  // Evening (moody sunset)
+            return "Good afternoon"
+        case 17..<22:
+            return "Good evening"
         default:
-            return "BigLakeMountains"
+            return "Hello"
         }
     }
 
-    // MARK: - Greeting Components
-
-    /// Dynamic greeting overlay with LLM-generated content
-    private var greetingOverlay: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Spacer()
-
-            if isLoadingGreeting {
-                // Loading state (shimmer effect)
-                VStack(alignment: .leading, spacing: 8) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.white.opacity(0.3))
-                        .frame(width: 150, height: 20)
-
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.white.opacity(0.3))
-                        .frame(width: 200, height: 36)
-
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.white.opacity(0.3))
-                        .frame(width: 180, height: 36)
-                }
-            } else if let greeting = greetingData {
-                // Dynamic greeting (LLM-generated)
-                Text(greeting.timeGreeting)
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .shadow(radius: 2)
-
-                Text(greeting.motivationalLine1)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white)
-                    .shadow(radius: 4)
-
-                Text(greeting.motivationalLine2)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white)
-                    .shadow(radius: 4)
-            } else {
-                // Fallback greeting (if LLM unavailable or failed)
-                Text("Hello!")
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .shadow(radius: 2)
-
-                Text("Here's what's")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white)
-                    .shadow(radius: 4)
-
-                Text("happening")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white)
-                    .shadow(radius: 4)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 30)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: heroHeight)
-    }
-
-    // MARK: - Sections
-
-    private var activeGoalsSection: some View {
-        Section {
-            // Horizontal carousel (real data from DataStore)
-            if dataStore.activeGoals.isEmpty {
-                Text("No active goals yet")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 40)
-                    .frame(maxWidth: .infinity)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        // Real goal cards from DataStore
-                        ForEach(dataStore.activeGoals.prefix(5)) { goalData in
-                            goalCard(for: goalData)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-            }
-        } header: {
-            HStack {
-                Text("Active Goals")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Button(action: {}) {
-                    Text("See All")
-                        .font(.subheadline)
-                        .foregroundStyle(.blue)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 4)
+    /// Goals that have at least one associated action
+    private var goalsWithActions: [GoalData] {
+        dataStore.activeGoals.filter { goal in
+            !dataStore.actionsForGoal(goal.id).isEmpty
         }
     }
 
-    private var recentActionsSection: some View {
-        Section {
-            // Action list - fully declarative SwiftUI pattern
-            if dataStore.actions.isEmpty {
-                // Empty state (iOS 17+ ContentUnavailableView)
-                ContentUnavailableView {
-                    Label("No Actions Yet", systemImage: "checkmark.circle")
-                } description: {
-                    Text("Actions you log will appear here")
-                }
-                .padding(.vertical, 40)
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(.horizontal, 20)
-            } else {
-                // SwiftUI LazyVStack handles iteration and identity
-                LazyVStack(spacing: 0) {
-                    ForEach(dataStore.recentActions.prefix(25)) { actionData in
-                        actionRow(for: actionData)
-                        Divider()
-                            .padding(.leading, 80)
-                    }
-                }
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(.horizontal, 20)
-            }
-        } header: {
-            Text("Recent Actions")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 4)
+    /// Actions that don't contribute to any goal
+    private var unlinkedActions: [ActionData] {
+        dataStore.recentActions.filter { action in
+            action.contributions.isEmpty
         }
-        .padding(.bottom, 20)
     }
 
-    // MARK: - Real Data Components
+    // MARK: - Components
 
     private func goalCard(for goalData: GoalData) -> some View {
         // Declarative: Presentation layer handles progress calculation
@@ -376,43 +273,38 @@ public struct HomeView: View {
             service: progressService
         )
 
-        return VStack(alignment: .leading, spacing: 12) {
-            // Progress ring with automatic vibrancy
-            ZStack {
-                Circle()
-                    .stroke(.tertiary, lineWidth: 4)
+        return ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Apple's standard ProgressView - circular gauge
+                Gauge(value: progress) {
+                    Text("\(Int(progress * 100))%")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                }
+                .gaugeStyle(.accessoryCircular)
+                .tint(.blue)
+                .frame(width: 60, height: 60)
 
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(.tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                // Goal info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(goalData.title ?? "Untitled Goal")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
 
-                Text("\(Int(progress * 100))%")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.primary)
+                    Text(goalData.formattedTargetDate)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .frame(width: 60, height: 60)
-
-            // Goal info with automatic vibrancy
-            VStack(alignment: .leading, spacing: 4) {
-                Text(goalData.title ?? "Untitled Goal")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-
-                // Declarative: GoalData computed property handles formatting
-                Text(goalData.formattedTargetDate)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            .frame(width: 160)
+            .padding()
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .onTapGesture {
+                navigationCoordinator.navigateToGoal(goalData.id)
             }
-        }
-        .frame(width: 160)
-        .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture {
-            navigationCoordinator.navigateToGoal(goalData.id)
+
         }
         .contextMenu {
             Button {
@@ -432,6 +324,7 @@ public struct HomeView: View {
     }
 
     private func actionRow(for actionData: ActionData) -> some View {
+        // Standard List row - minimal custom styling
         HStack(spacing: 12) {
             // Icon - declarative via ActionData extension
             Image(systemName: actionData.icon)
@@ -479,27 +372,116 @@ public struct HomeView: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(Rectangle())  // Make entire row tappable
         .onTapGesture {
             actionToEdit = actionData
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+        .contextMenu {
+            Button {
+                actionToEdit = actionData
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+
+            Divider()
+
             Button(role: .destructive) {
                 actionToDelete = actionData
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+    }
+
+    /// Collapsible section showing actions grouped by goal
+    private func goalActionsSection(for goalData: GoalData) -> some View {
+        let actions = dataStore.actionsForGoal(goalData.id)
+        let isExpanded = expandedGoalSections.contains(goalData.id)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            // Section header (tappable to expand/collapse)
             Button {
-                actionToEdit = actionData
+                withAnimation {
+                    if isExpanded {
+                        expandedGoalSections.remove(goalData.id)
+                    } else {
+                        expandedGoalSections.insert(goalData.id)
+                    }
+                }
             } label: {
-                Label("Edit", systemImage: "pencil")
+                HStack(spacing: 12) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20)
+
+                    Text(goalData.title ?? "Untitled Goal")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Text("(\(actions.count))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
-            .tint(.blue)
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+
+            // Action carousel (only shown when expanded)
+            if isExpanded {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(actions.prefix(10).sorted(by: { $0.logTime > $1.logTime })) { actionData in
+                            actionCard(for: actionData)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+    }
+
+    /// Compact action card for horizontal carousel
+    private func actionCard(for actionData: ActionData) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Icon
+            Image(systemName: actionData.icon)
+                .font(.title2)
+                .foregroundStyle(.blue)
+                .frame(width: 40, height: 40)
+                .background(.blue.opacity(0.1))
+                .clipShape(Circle())
+
+            // Title
+            Text(actionData.title ?? "Untitled")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Measurement (if available)
+            if !actionData.formattedMeasurement.isEmpty {
+                Text(actionData.formattedMeasurement)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            // Date (relative formatting)
+            Text(actionData.logTime, style: .relative)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(width: 140, height: 160)
+        .padding()
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture {
+            actionToEdit = actionData
         }
         .contextMenu {
             Button {
@@ -519,42 +501,6 @@ public struct HomeView: View {
     }
 
     // MARK: - Helper Methods
-
-    /// Generate personalized greeting using LLM
-    /// Called on .task (view appear) with automatic caching
-    @MainActor
-    private func generateGreeting() async {
-        // Skip if already loading or recently generated (within last 2 hours)
-        guard !isLoadingGreeting else { return }
-
-        // TODO: Add caching logic to avoid regenerating too frequently
-        // For now, generate every time (acceptable for MVP)
-
-        isLoadingGreeting = true
-
-        do {
-            #if os(iOS) || os(macOS)
-                // Only generate on platforms with Foundation Models support
-                if #available(iOS 26.0, macOS 26.0, *) {
-                    let service = GreetingService(database: dataStore.database)
-                    let greeting = try await service.generateGreeting()
-                    self.greetingData = greeting
-                } else {
-                    // Platform doesn't support Foundation Models - use fallback
-                    self.greetingData = nil
-                }
-            #else
-                // Platform doesn't support Foundation Models - use fallback
-                self.greetingData = nil
-            #endif
-        } catch {
-            // LLM generation failed - use fallback greeting
-            print("Failed to generate greeting: \(error)")
-            self.greetingData = nil
-        }
-
-        isLoadingGreeting = false
-    }
 
     /// Delete goal with confirmation
     private func deleteGoal(_ goalData: GoalData) {
@@ -578,49 +524,85 @@ public struct HomeView: View {
     ///
     /// **Pattern**: Declarative @ToolbarContentBuilder for reusability
     /// **Actions**: All menu items use type-safe NavigationRoute
+    /// **Organization**: Grouped by function (Data, Sync, Maintenance, System)
     @ToolbarContentBuilder
     private var homeToolbarItems: some ToolbarContent {
-        // Add Action button (persistent, always visible)
+        // Create Menu (Goal or Action)
         ToolbarItem(placement: .primaryAction) {
-            Button {
-                showingLogAction = true
+            Menu {
+                Button {
+                    showingCreateGoal = true
+                } label: {
+                    Label("Create Goal", systemImage: "target")
+                }
+
+                Button {
+                    showingLogAction = true
+                } label: {
+                    Label("Log Action", systemImage: "checkmark.circle")
+                }
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .imageScale(.large)
                     .foregroundStyle(.blue)
             }
+            .help("Create Goal or Log Action")
         }
 
-        // Menu button
+        // Menu button (organized by feature category)
         ToolbarItem(placement: .automatic) {
             Menu {
-                Button {
-                    navigationCoordinator.navigate(to: .settings)
-                } label: {
-                    Label("Settings", systemImage: "gear")
+                // Data Management Section
+                Section("Data") {
+                    Button {
+                        navigationCoordinator.navigate(to: .exportData)
+                    } label: {
+                        Label("Import/Export CSV", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        navigationCoordinator.navigate(to: .reviewDuplicates)
+                    } label: {
+                        Label("Review Duplicates", systemImage: "doc.on.doc")
+                    }
+
+                    Button {
+                        navigationCoordinator.navigate(to: .archives)
+                    } label: {
+                        Label("Archives", systemImage: "archivebox")
+                    }
                 }
 
-                Button {
-                    navigationCoordinator.navigate(to: .exportData)
-                } label: {
-                    Label("Export Data", systemImage: "square.and.arrow.up")
+                // Sync Section
+                Section("Sync") {
+                    Button {
+                        navigationCoordinator.navigate(to: .cloudKitSync)
+                    } label: {
+                        Label("CloudKit Sync", systemImage: "icloud")
+                    }
+
+                    #if os(iOS)
+                        Button {
+                            navigationCoordinator.navigate(to: .healthSync)
+                        } label: {
+                            Label("Import from Health", systemImage: "heart.text.square")
+                        }
+                    #endif
                 }
 
-                Button {
-                    navigationCoordinator.navigate(to: .reviewDuplicates)
-                } label: {
-                    Label("Review Duplicates", systemImage: "doc.on.doc")
-                }
-
-                Button {
-                    navigationCoordinator.navigate(to: .archives)
-                } label: {
-                    Label("Archives", systemImage: "archivebox")
+                // System Section
+                Section("System") {
+                    Button {
+                        navigationCoordinator.navigate(to: .settings)
+                    } label: {
+                        Label("Settings", systemImage: "gear")
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .imageScale(.large)
             }
+            .help("More Options")
         }
     }
 }

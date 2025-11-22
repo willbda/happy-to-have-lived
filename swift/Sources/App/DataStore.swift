@@ -729,6 +729,72 @@ public final class DataStore {
         }
     }
 
+    // MARK: - Measures Operations
+
+    /// Load all measures from database
+    ///
+    /// **NOTE**: With ValueObservation, this is rarely needed!
+    /// **Usage**: Only for manual refresh (pull-to-refresh)
+    /// **Normal flow**: ValueObservation automatically updates on any database change
+    public func loadMeasures() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = MeasureRepository(database: database)
+            measures = try await repository.fetchAll()
+            print("✅ DataStore: Loaded \(measures.count) measures")
+        } catch let error as ValidationError {
+            errorMessage = error.userMessage
+            print("❌ DataStore ValidationError: \(error.userMessage)")
+        } catch {
+            errorMessage = "Failed to load measures: \(error.localizedDescription)"
+            print("❌ DataStore: \(error)")
+        }
+
+        isLoading = false
+    }
+
+    /// Create or retrieve an existing measure
+    ///
+    /// **Pattern**: Uses MeasureCoordinator.getOrCreate() for idempotent creation
+    /// **Result**: Returns existing measure if duplicate, creates new if not
+    ///
+    /// **Use Case**: Inline measure creation from form components
+    /// - MeasurementInputRow (action measurement input)
+    /// - MetricTargetRow (goal metric targets)
+    ///
+    /// **Why DataStore?**
+    /// - Views can't use @Dependency directly (SwiftUI structs)
+    /// - Centralizes database access through single source of truth
+    /// - ValueObservation automatically updates measures array
+    @MainActor
+    public func createMeasure(
+        unit: String,
+        measureType: String,
+        title: String? = nil
+    ) async throws -> Measure {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let coordinator = MeasureCoordinator(database: database)
+            let measure = try await coordinator.getOrCreate(
+                unit: unit,
+                measureType: measureType,
+                title: title
+            )
+            errorMessage = nil
+
+            print("✅ DataStore: Created/retrieved measure '\(measure.title ?? "")' (ValueObservation will update UI)")
+            return measure
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to create measure - \(error)")
+            throw error
+        }
+    }
+
     // MARK: - Obligations Operations
 
     /// Load all obligations from database

@@ -44,101 +44,99 @@ struct CSVExportImportView: View {
     @State private var finalImportResult: ImportResult?
 
     var body: some View {
-        NavigationStack {
-            Form {
-                // Entity type picker
-                Section {
-                    Picker("Data Type", selection: $selectedEntityType) {
-                        Text("Actions").tag(DomainModel.actions)
-                        Text("Goals").tag(DomainModel.goals)
-                        Text("Values").tag(DomainModel.values)
-                        Text("Terms").tag(DomainModel.terms)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Select data type to export")
-                } header: {
-                    Text("Export Type")
+        Form {
+            // Entity type picker
+            Section {
+                Picker("Data Type", selection: $selectedEntityType) {
+                    Text("Actions").tag(DomainModel.actions)
+                    Text("Goals").tag(DomainModel.goals)
+                    Text("Values").tag(DomainModel.values)
+                    Text("Terms").tag(DomainModel.terms)
                 }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Select data type to export")
+            } header: {
+                Text("Export Type")
+            }
 
-                // Format picker
-                Section {
-                    Picker("Format", selection: $selectedFormat) {
-                        Text("CSV").tag(Services.ExportFormat.csv)
-                        Text("JSON").tag(Services.ExportFormat.json)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Select export format")
-                } header: {
-                    Text("Export Format")
-                } footer: {
-                    Text("CSV: Spreadsheet-compatible, JSON: Structured data with full details")
+            // Format picker
+            Section {
+                Picker("Format", selection: $selectedFormat) {
+                    Text("CSV").tag(Services.ExportFormat.csv)
+                    Text("JSON").tag(Services.ExportFormat.json)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Select export format")
+            } header: {
+                Text("Export Format")
+            } footer: {
+                Text("CSV: Spreadsheet-compatible, JSON: Structured data with full details")
+                    .font(.caption)
+            }
+
+            // Export section
+            Section("Export Data") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Export all \(selectedEntityType.displayName) as raw text")
                         .font(.caption)
-                }
+                        .foregroundStyle(.secondary)
 
-                // Export section
-                Section("Export Data") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Export all \(selectedEntityType.displayName) as raw text")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Button(action: exportData) {
-                            if isExporting {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Label(
-                                    "Export \(selectedEntityType.displayName)",
-                                    systemImage: "square.and.arrow.down.fill")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isExporting)
-                        .accessibilityLabel(
-                            "Export all \(selectedEntityType.displayName) to text file")
-
-                        if !exportResult.isEmpty {
-                            Text(exportResult)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 4)
+                    Button(action: exportData) {
+                        if isExporting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label(
+                                "Export \(selectedEntityType.displayName)",
+                                systemImage: "square.and.arrow.down.fill")
                         }
                     }
-                }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isExporting)
+                    .accessibilityLabel(
+                        "Export all \(selectedEntityType.displayName) to text file")
 
-                // Import section
-                Section("Import Data") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Import \(selectedEntityType.displayName) with validation and preview")
+                    if !exportResult.isEmpty {
+                        Text(exportResult)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-
-                        Button(action: { showFileImporter = true }) {
-                            if isImporting {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Label(
-                                    "Import \(selectedEntityType.displayName)",
-                                    systemImage: "doc.badge.arrow.up")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isImporting)
-                        .accessibilityLabel("Import \(selectedEntityType.displayName) from file")
-
-                        if !importResult.isEmpty {
-                            Text(importResult)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 4)
-                        }
+                            .padding(.top, 4)
                     }
                 }
             }
-            .formStyle(.grouped)
-            .navigationTitle("Data Export & Import")
+
+            // Import section
+            Section("Import Data") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Import \(selectedEntityType.displayName) with validation and preview")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button(action: { showFileImporter = true }) {
+                        if isImporting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label(
+                                "Import \(selectedEntityType.displayName)",
+                                systemImage: "doc.badge.arrow.up")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isImporting)
+                    .accessibilityLabel("Import \(selectedEntityType.displayName) from file")
+
+                    if !importResult.isEmpty {
+                        Text(importResult)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    }
+                }
+            }
         }
+        .formStyle(.grouped)
+        .navigationTitle("Data Export & Import")
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [contentType],

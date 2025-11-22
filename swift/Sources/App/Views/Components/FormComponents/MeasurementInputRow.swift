@@ -25,23 +25,35 @@
 
 import SwiftUI
 import Models
+import Dependencies
+import Services
+import SQLiteData
 
 public struct MeasurementInputRow: View {
     @Binding var measureId: UUID?
     @Binding var value: Double
     let availableMeasures: [MeasureData]
     let onRemove: () -> Void
+    let onMeasureCreated: (() async -> Void)?
+
+    @State private var showingCreateMeasure = false
+    @State private var newMeasureUnit = ""
+    @State private var newMeasureTitle = ""
+    @State private var newMeasureType = "distance"
+    @State private var isCreating = false
 
     public init(
         measureId: Binding<UUID?>,
         value: Binding<Double>,
         availableMeasures: [MeasureData],
-        onRemove: @escaping () -> Void
+        onRemove: @escaping () -> Void,
+        onMeasureCreated: (() async -> Void)? = nil
     ) {
         self._measureId = measureId
         self._value = value
         self.availableMeasures = availableMeasures
         self.onRemove = onRemove
+        self.onMeasureCreated = onMeasureCreated
     }
 
     public var body: some View {
@@ -87,6 +99,17 @@ public struct MeasurementInputRow: View {
                 }
             }
 
+            // Create new measure button
+            if availableMeasures.isEmpty || measureId == nil {
+                Button {
+                    showingCreateMeasure = true
+                } label: {
+                    Label("Create New Measure", systemImage: "plus.circle")
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.borderless)
+            }
+
             // Remove button (consistent placement)
             Button(role: .destructive, action: onRemove) {
                 Label("Remove", systemImage: "minus.circle.fill")
@@ -95,6 +118,113 @@ public struct MeasurementInputRow: View {
             .buttonStyle(.borderless)
         }
         .padding(.vertical, 12)  // Modern spacing for better touch targets
+        .sheet(isPresented: $showingCreateMeasure) {
+            NavigationStack {
+                createMeasureForm
+            }
+        }
+    }
+
+    // MARK: - Create Measure Form
+
+    private var createMeasureForm: some View {
+        Form {
+            Section("Measure Details") {
+                TextField("Unit (e.g., km, hours, sessions)", text: $newMeasureUnit)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)  // iOS: Disable caps for unit names (km, hours)
+                    #endif
+
+                TextField("Title (e.g., Distance in kilometers)", text: $newMeasureTitle)
+
+                Picker("Type", selection: $newMeasureType) {
+                    Text("Distance").tag("distance")
+                    Text("Time").tag("time")
+                    Text("Count").tag("count")
+                    Text("Energy").tag("energy")
+                    Text("Other").tag("other")
+                }
+            }
+
+            Section {
+                Text("Examples:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("• Unit: km, Title: Distance in kilometers, Type: distance")
+                    .font(.caption2)
+                Text("• Unit: hours, Title: Duration in hours, Type: time")
+                    .font(.caption2)
+                Text("• Unit: sessions, Title: Number of sessions, Type: count")
+                    .font(.caption2)
+            }
+        }
+        .navigationTitle("New Measure")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    showingCreateMeasure = false
+                }
+            }
+
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    Task {
+                        await createMeasure()
+                    }
+                }
+                .disabled(newMeasureUnit.isEmpty || isCreating)
+            }
+        }
+    }
+
+    /// Create a new measure and add it to the database
+    ///
+    /// **Pattern**: Uses MeasureCoordinator.getOrCreate() for proper duplicate prevention
+    /// **Architecture**: UI → Coordinator → Repository → Database
+    /// **Idempotent**: Returns existing measure if duplicate found (no error thrown)
+    /// **Error Handling**: User-friendly ValidationError messages
+    private func createMeasure() async {
+        isCreating = true
+        defer { isCreating = false }
+
+        // Capture @MainActor properties
+        let unit = newMeasureUnit
+        let title = newMeasureTitle.isEmpty ? newMeasureUnit.capitalized : newMeasureTitle
+        let type = newMeasureType
+
+        do {
+            @Dependency(\.defaultDatabase) var database
+
+            // Use MeasureCoordinator.getOrCreate() pattern
+            let coordinator = MeasureCoordinator(database: database)
+            let measure = try await coordinator.getOrCreate(
+                unit: unit,
+                measureType: type,
+                title: title
+            )
+
+            // Update UI to select newly created measure
+            measureId = measure.id
+
+            // Notify parent (triggers DataStore.measures refresh)
+            await onMeasureCreated?()
+
+            // Dismiss sheet
+            showingCreateMeasure = false
+
+            // Reset form
+            newMeasureUnit = ""
+            newMeasureTitle = ""
+            newMeasureType = "distance"
+
+            print("✅ Created measure: \(measure.unit) (\(measure.id))")
+
+        } catch {
+            print("❌ Failed to create measure: \(error)")
+            // Error handling: In production, show alert to user
+            // For now, error prints to console and sheet stays open
+        }
     }
 }
 
@@ -141,13 +271,14 @@ public struct MeasurementInputRow: View {
                         conversionFactor: nil
                     )
                 ],
-                onRemove: { print("Removed") }
+                onRemove: { print("Removed") },
+                onMeasureCreated: { print("Measure created - refresh") }
             )
         }
     }
 }
 
-#Preview("Empty") {
+#Preview("Empty - Shows Create Button") {
     Form {
         Section {
             MeasurementInputRow(
@@ -166,7 +297,8 @@ public struct MeasurementInputRow: View {
                         conversionFactor: nil
                     )
                 ],
-                onRemove: { print("Removed") }
+                onRemove: { print("Removed") },
+                onMeasureCreated: { print("Measure created - refresh") }
             )
         }
     }

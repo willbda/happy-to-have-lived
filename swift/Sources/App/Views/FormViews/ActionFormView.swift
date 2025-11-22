@@ -204,7 +204,12 @@ public struct ActionFormView: View {
                     measureId: bindingForMeasurement(measurement.id).measureId,
                     value: bindingForMeasurement(measurement.id).value,
                     availableMeasures: dataStore.measures,
-                    onRemove: { removeMeasurement(id: measurement.id) }
+                    onRemove: { removeMeasurement(id: measurement.id) },
+                    onMeasureCreated: {
+                        // DataStore.measures automatically updates via ValueObservation
+                        // No manual refresh needed - just for explicit notification
+                        print("✅ Measure created - DataStore will auto-update")
+                    }
                 )
             }
 

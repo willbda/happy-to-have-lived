@@ -517,6 +517,70 @@ public final class DataStore {
         }
     }
 
+    /// Update an existing action
+    ///
+    /// **Pattern**: Coordinator updates action → ValueObservation auto-updates UI
+    /// **Result**: List views automatically update (via @Observable)
+    public func updateAction(
+        id: UUID,
+        from formData: ActionFormData,
+        existing: ActionData
+    ) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            // Reconstruct entities from ActionData
+            let action = Action(
+                title: existing.title,
+                detailedDescription: existing.detailedDescription,
+                freeformNotes: existing.freeformNotes,
+                durationMinutes: existing.durationMinutes,
+                startTime: existing.startTime,
+                logTime: existing.logTime,
+                id: existing.id
+            )
+
+            let existingMeasurements = existing.measurements.map { measurement in
+                MeasuredAction(
+                    actionId: existing.id,
+                    measureId: measurement.measureId,
+                    value: measurement.value,
+                    createdAt: measurement.createdAt,
+                    id: measurement.id
+                )
+            }
+
+            let existingContributions = existing.contributions.map { contribution in
+                ActionGoalContribution(
+                    actionId: existing.id,
+                    goalId: contribution.goalId,
+                    contributionAmount: contribution.contributionAmount,
+                    measureId: contribution.measureId,
+                    createdAt: contribution.createdAt,
+                    id: contribution.id
+                )
+            }
+
+            // Update via coordinator
+            let coordinator = ActionCoordinator(database: database)
+            _ = try await coordinator.update(
+                action: action,
+                measurements: existingMeasurements,
+                contributions: existingContributions,
+                from: formData
+            )
+
+            errorMessage = nil
+
+            print("✅ DataStore: Updated action")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to update action - \(error)")
+            throw error
+        }
+    }
+
     /// Delete an action
     public func deleteAction(_ actionData: ActionData) async throws {
         isLoading = true
@@ -578,6 +642,49 @@ public final class DataStore {
         }
     }
 
+    /// Update an existing personal value
+    ///
+    /// **Pattern**: Coordinator updates value → ValueObservation auto-updates UI
+    /// **Result**: List views automatically update (via @Observable)
+    public func updateValue(
+        id: UUID,
+        from formData: PersonalValueFormData,
+        existing: PersonalValueData
+    ) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            // Reconstruct entity from PersonalValueData
+            // Convert valueLevel string to enum (PersonalValueData stores as String for Codable)
+            let valueLevel = ValueLevel(rawValue: existing.valueLevel) ?? .general
+
+            let value = PersonalValue(
+                title: existing.title,
+                detailedDescription: existing.detailedDescription,
+                freeformNotes: existing.freeformNotes,
+                priority: existing.priority,
+                valueLevel: valueLevel,
+                lifeDomain: existing.lifeDomain,
+                alignmentGuidance: existing.alignmentGuidance,
+                logTime: existing.logTime,
+                id: existing.id
+            )
+
+            // Update via coordinator
+            let coordinator = PersonalValueCoordinator(database: database)
+            _ = try await coordinator.update(value: value, from: formData)
+
+            errorMessage = nil
+
+            print("✅ DataStore: Updated value")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to update value - \(error)")
+            throw error
+        }
+    }
+
     /// Delete a personal value
     public func deleteValue(_ valueData: PersonalValueData) async throws {
         isLoading = true
@@ -635,6 +742,57 @@ public final class DataStore {
         } catch {
             errorMessage = error.localizedDescription
             print("❌ DataStore: Failed to create term - \(error)")
+            throw error
+        }
+    }
+
+    /// Update an existing term
+    ///
+    /// **Pattern**: Coordinator updates term → ValueObservation auto-updates UI
+    /// **Result**: List views automatically update (via @Observable)
+    public func updateTerm(
+        id: UUID,
+        from formData: TimePeriodFormData,
+        existing: TimePeriodData
+    ) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            // Reconstruct entities from TimePeriodData
+            let timePeriod = TimePeriod(
+                title: existing.timePeriodTitle,
+                detailedDescription: nil,  // Not stored in TimePeriodData
+                freeformNotes: nil,  // Not stored in TimePeriodData
+                startDate: existing.startDate,
+                endDate: existing.endDate,
+                logTime: Date(),  // Will be preserved by coordinator
+                id: existing.timePeriodId
+            )
+
+            let goalTerm = GoalTerm(
+                timePeriodId: existing.timePeriodId,
+                termNumber: existing.termNumber,
+                theme: existing.theme,
+                reflection: existing.reflection,
+                status: existing.status.flatMap { TermStatus(rawValue: $0) },
+                id: existing.id
+            )
+
+            // Update via coordinator
+            let coordinator = TimePeriodCoordinator(database: database)
+            _ = try await coordinator.update(
+                timePeriod: timePeriod,
+                goalTerm: goalTerm,
+                from: formData
+            )
+
+            errorMessage = nil
+
+            print("✅ DataStore: Updated term")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("❌ DataStore: Failed to update term - \(error)")
             throw error
         }
     }

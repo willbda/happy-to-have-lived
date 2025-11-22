@@ -205,14 +205,16 @@ public struct TermFormView: View {
                     status: isEditMode ? status : nil
                 )
 
-                // TODO: Add update support when DataStore.updateTerm() is implemented
-                if termToEdit != nil {
-                    // Update not yet implemented - create new for now
-                    print("⚠️ Update not yet supported, creating new term")
+                // Create or update term via DataStore
+                if let existing = termToEdit {
+                    _ = try await dataStore.updateTerm(
+                        id: existing.id,
+                        from: formData,
+                        existing: existing
+                    )
+                } else {
+                    _ = try await dataStore.createTerm(from: formData)
                 }
-
-                // Create term via DataStore
-                _ = try await dataStore.createTerm(from: formData)
 
                 // Success! DataStore ValueObservation will update list automatically
                 dismiss()

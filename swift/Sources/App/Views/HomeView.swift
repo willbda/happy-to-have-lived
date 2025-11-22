@@ -2,27 +2,30 @@
 // HomeView.swift
 // Written by Claude Code on 2025-11-20
 // Refactored on 2025-11-20 to use DataStore declarative pattern
+// Updated on 2025-11-22 with fully declarative iOS 18+ patterns
 //
 // PURPOSE: Main dashboard view showing active goals and recent actions
 // DATA SOURCE: DataStore (environment object, single source of truth)
-// PATTERN: Hero image + parallax scroll (inspired by Calm app and Apple Music)
+// PATTERN: Fully declarative with iOS 18+ Liquid Glass design system
 //
 // LAYOUT:
-// 1. Hero image (upper ~35%) with parallax fade effect
-// 2. Greeting overlay (3 lines, white text with shadow)
+// 1. Hero image (upper ~35%) with parallax effect (.visualEffect modifier)
+// 2. Greeting overlay (white text with shadow for legibility)
 // 3. Active goals horizontal carousel (from DataStore.activeGoals)
 // 4. Quick action button (Log Action)
 // 5. Recent actions list (from DataStore.actions, color-coded by goal)
 //
 // DECLARATIVE ARCHITECTURE:
-// - No manual refresh calls (DataStore updates propagate automatically)
-// - No separate ViewModel (DataStore is single source of truth)
-// - Truly reactive (view observes DataStore via @Environment)
+// - No manual clipping (SwiftUI handles overflow automatically)
+// - No manual frame calculations (uses containerRelativeFrame)
+// - Scroll effects via .scrollTransition (iOS 17+)
+// - Overlay alignment for text (automatic safe area handling)
 //
 // REFERENCES:
-// - Calm app: Hero image with fade-on-scroll
+// - Calm app: Hero image with parallax depth effect
 // - Apple Music: Gradient overlays for readability
 // - Apple Health: Card-based content sections
+// - SwiftUI visualEffect: Declarative scroll-based effects (iOS 17+)
 //
 
 import Models
@@ -69,16 +72,15 @@ public struct HomeView: View {
                 // Three separate sections - cleaner separation
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Hero Section - fully respects safe areas
-                        GeometryReader { geometry in
-                            ZStack(alignment: .bottomLeading) {
-                                Image("Mountains4")
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: geometry.size.width, height: 300)
-                                    .clipped()
-
-                                // Simple greeting overlay
+                        // Hero Section - FULLY DECLARATIVE with overlay
+                        Image("Mountains4")
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .containerRelativeFrame(.vertical) { length, _ in
+                                length * 0.35
+                            }
+                            .overlay(alignment: .bottomLeading) {
+                                // Greeting overlay - respects safe area insets
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(timeBasedGreeting)
                                         .font(.title3)
@@ -89,10 +91,13 @@ public struct HomeView: View {
                                 }
                                 .foregroundStyle(.white)
                                 .shadow(radius: 4)
-                                .padding()
+                                .safeAreaPadding()  // Declarative safe area respect
                             }
-                        }
-                        .frame(height: 300)
+                            .scrollTransition { content, phase in
+                                content
+                                    .offset(y: phase.value * -50)
+                            }
+                            .clipped()  // Clip the image itself, not the overlay
 
                         // Active Goals Section (separate List)
                         VStack(alignment: .leading, spacing: 12) {
@@ -125,7 +130,9 @@ public struct HomeView: View {
                                         }
                                     }
                                     .padding(.horizontal, 20)
+                                    .scrollTargetLayout()
                                 }
+                                .scrollTargetBehavior(.viewAligned)
                             }
                         }
 
@@ -188,6 +195,9 @@ public struct HomeView: View {
                 }
                 .toolbar {
                     homeToolbarItems
+                }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: 0)  // Let hero extend to top
                 }
             }  // NavigationContainer
             .sheet(isPresented: $showingLogAction) {
@@ -440,7 +450,9 @@ public struct HomeView: View {
                         }
                     }
                     .padding(.horizontal, 20)
+                    .scrollTargetLayout()
                 }
+                .scrollTargetBehavior(.viewAligned)
             }
         }
     }

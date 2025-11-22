@@ -166,14 +166,16 @@ public struct PersonalValuesFormView: View {
                     alignmentGuidance: alignmentGuidance.isEmpty ? nil : alignmentGuidance
                 )
 
-                // TODO: Add update support when DataStore.updateValue() is implemented
-                if valueToEdit != nil {
-                    // Update not yet implemented - create new for now
-                    print("⚠️ Update not yet supported, creating new value")
+                // Create or update value via DataStore
+                if let existing = valueToEdit {
+                    _ = try await dataStore.updateValue(
+                        id: existing.id,
+                        from: formData,
+                        existing: existing
+                    )
+                } else {
+                    _ = try await dataStore.createValue(from: formData)
                 }
-
-                // Create value via DataStore
-                _ = try await dataStore.createValue(from: formData)
 
                 // Success! DataStore ValueObservation will update list automatically
                 dismiss()

@@ -273,14 +273,16 @@ public struct ActionFormView: View {
                     goalContributions: selectedGoalIds
                 )
 
-                // TODO: Add update support when DataStore.updateAction() is implemented
-                if actionToEdit != nil {
-                    // Update not yet implemented - create new for now
-                    print("⚠️ Update not yet supported, creating new action")
+                // Create or update action via DataStore
+                if let existing = actionToEdit {
+                    _ = try await dataStore.updateAction(
+                        id: existing.id,
+                        from: formData,
+                        existing: existing
+                    )
+                } else {
+                    _ = try await dataStore.createAction(from: formData)
                 }
-
-                // Create action via DataStore
-                _ = try await dataStore.createAction(from: formData)
 
                 // Success! DataStore ValueObservation will update list automatically
                 dismiss()

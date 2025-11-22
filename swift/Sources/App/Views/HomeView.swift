@@ -70,26 +70,29 @@ public struct HomeView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         // Hero Section - fully respects safe areas
-                        ZStack(alignment: .bottomLeading) {
-                            Image("Mountains4")
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(height: 300)
-                                .clipped()
+                        GeometryReader { geometry in
+                            ZStack(alignment: .bottomLeading) {
+                                Image("Mountains4")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: geometry.size.width, height: 300)
+                                    .clipped()
 
-                            // Simple greeting overlay
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(timeBasedGreeting)
-                                    .font(.title3)
+                                // Simple greeting overlay
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(timeBasedGreeting)
+                                        .font(.title3)
 
-                                Text("Here's what's happening")
-                                    .font(.largeTitle)
-                                    .fontWeight(.medium)
+                                    Text("Here's what's happening")
+                                        .font(.largeTitle)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundStyle(.white)
+                                .shadow(radius: 4)
+                                .padding()
                             }
-                            .foregroundStyle(.white)
-                            .shadow(radius: 4)
-                            .padding()
                         }
+                        .frame(height: 300)
 
                         // Active Goals Section (separate List)
                         VStack(alignment: .leading, spacing: 12) {

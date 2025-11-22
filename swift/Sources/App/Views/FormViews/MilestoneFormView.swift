@@ -1,9 +1,16 @@
 //
 // MilestoneFormView.swift
 // Written by Claude Code on 2025-11-19
+// Refactored by Claude Code on 2025-11-22 - Migrated to DataStore pattern
 //
 // PURPOSE: Form for creating milestones
-// PATTERN: @State for local form data, ViewModel for save/update
+// PATTERN: @State for local form data, DataStore for operations
+//
+// DATA FLOW:
+// 1. User edits local @State formData (MilestoneFormData)
+// 2. Save button calls dataStore.createMilestone()
+// 3. DataStore ValueObservation automatically updates list views
+// 4. Errors display via .errorAlert(dataStore:) modifier
 //
 
 import Models
@@ -12,13 +19,19 @@ import SwiftUI
 
 /// Form view for creating/editing milestones
 ///
-/// **PATTERN**: SwiftUI Form with @State for data binding
-/// **VIEWMODEL**: MilestoneFormViewModel handles save/update
+/// **DECLARATIVE ARCHITECTURE** (2025-11-22):
+/// - Local form state (MilestoneFormData) for editing
+/// - DataStore methods for persistence + automatic list updates
+/// - No manual refresh needed (DataStore propagates changes)
+/// - Save button pattern (explicit, validated writes)
+///
 /// **VALIDATION**: Handled by MilestoneCoordinator → MilestoneValidation
 ///
 public struct MilestoneFormView: View {
-    @State private var viewModel = MilestoneFormViewModel()
     @Environment(\.dismiss) private var dismiss
+    @Environment(DataStore.self) private var dataStore
+
+    @State private var isSaving = false
 
     // Form data (local state)
     @State private var formData = MilestoneFormData()
@@ -79,26 +92,23 @@ public struct MilestoneFormView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     Task {
+                        isSaving = true
+                        defer { isSaving = false }
+
                         do {
-                            _ = try await viewModel.save(from: formData)
+                            try await dataStore.createMilestone(from: formData)
                             dismiss()
                         } catch {
-                            // Error handled in viewModel
+                            // Error displayed via .errorAlert(dataStore:)
                         }
                     }
                 }
-                .disabled(viewModel.isSaving || formData.title.isEmpty)
+                .disabled(isSaving || formData.title.isEmpty)
             }
         }
-        .alert("Error", isPresented: .constant(viewModel.hasError)) {
-            Button("OK") {
-                viewModel.errorMessage = nil
-            }
-        } message: {
-            Text(viewModel.errorMessage ?? "Unknown error")
-        }
+        .errorAlert(dataStore: dataStore)
         .overlay {
-            if viewModel.isSaving {
+            if isSaving {
                 ProgressView()
             }
         }

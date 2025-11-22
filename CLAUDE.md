@@ -443,7 +443,12 @@ swift/
 │   │   └── ImportExport/          # CSV import/export, data transformation
 │   └── App/                       # SwiftUI application layer
 │       ├── DataStore.swift        # ⭐ Central @Observable store (single source of truth)
-│       ├── ViewModels/            # Deprecated (migrated to DataStore 2025-11-20)
+│       ├── ViewModels/            # Specialized ViewModels (HealthDashboard, Export, LLM, Debug)
+│       │   ├── FormModels/        # Form state models (GoalFormModel - works with DataStore)
+│       │   ├── HealthDashboardViewModel.swift  # HealthKit live tracking
+│       │   ├── UtilityViewModels/ # ExportViewModel (CSV/JSON export)
+│       │   ├── LLMViewModels/     # GoalCoachViewModel (LLM conversations)
+│       │   └── DebugViewModels/   # EmbeddingManagementViewModel (admin tools)
 │       └── Views/                 # SwiftUI views
 │           ├── FormViews/         # Entity creation/editing forms
 │           ├── ListViews/         # Entity list displays
@@ -658,9 +663,59 @@ open swift/HappyToHaveLived/HappyToHaveLived.xcodeproj
 - Schema validation
 - Query performance (N+1 detection)
 
-**Legacy ViewModel Pattern** (deprecated 2025-11-20, replaced by DataStore):
+### ViewModel Architecture (Updated 2025-11-22)
 
-The project previously used individual ViewModels (GoalsListViewModel, ActionFormViewModel, etc.). These have been replaced by centralized DataStore. If you encounter old ViewModel code, migrate to DataStore pattern using `@Environment(DataStore.self)`.
+**IMPORTANT**: The project has migrated from individual CRUD ViewModels to centralized DataStore pattern.
+
+**✅ Active ViewModels** (specialized functionality):
+- `GoalFormModel` - Form state model (works **with** DataStore, not replaced by it)
+- `HealthDashboardViewModel` - HealthKit live tracking with stateful query subscriptions
+- `ExportViewModel` - CSV/JSON export orchestration with progress tracking
+- `GoalCoachViewModel` - LLM conversation management with LanguageModelSession
+- `EmbeddingManagementViewModel` - Semantic embeddings cache admin tools
+
+**❌ Deprecated ViewModels** (replaced by DataStore 2025-11-20/2025-11-22):
+- `GoalsListViewModel` → Use `@Environment(DataStore.self)` + `dataStore.goals`
+- `ActionsListViewModel` → Use `@Environment(DataStore.self)` + `dataStore.actions`
+- `PersonalValuesListViewModel` → Use `@Environment(DataStore.self)` + `dataStore.values`
+- `TermsListViewModel` → Use `@Environment(DataStore.self)` + `dataStore.terms`
+- `GoalFormViewModel` → Use `@Environment(DataStore.self)` + `dataStore.createGoal()`
+- `ActionFormViewModel` → Use `@Environment(DataStore.self)` + `dataStore.createAction()`
+- `PersonalValueFormViewModel` → Use `@Environment(DataStore.self)` + `dataStore.createValue()`
+- `TermFormViewModel` → Use `@Environment(DataStore.self)` + `dataStore.createTerm()`
+- `MilestoneFormViewModel` → Use `@Environment(DataStore.self)` + `dataStore.createMilestone()` ✅ **Migrated 2025-11-22**
+- `ObligationFormViewModel` → Use `@Environment(DataStore.self)` + `dataStore.createObligation()` ✅ **Migrated 2025-11-22**
+
+**Migration Pattern** (see MilestoneFormView.swift, ObligationFormView.swift for reference):
+```swift
+// OLD PATTERN (deprecated):
+@State private var viewModel = MilestoneFormViewModel()
+
+Button("Save") {
+    try await viewModel.save(from: formData)
+}
+
+// NEW PATTERN (current):
+@Environment(DataStore.self) private var dataStore
+@State private var isSaving = false
+
+Button("Save") {
+    Task {
+        isSaving = true
+        defer { isSaving = false }
+        try await dataStore.createMilestone(from: formData)
+        dismiss()
+    }
+}
+.errorAlert(dataStore: dataStore)  // Unified error handling
+```
+
+**Why Specialized ViewModels Remain**:
+- `HealthDashboardViewModel`: Manages stateful HealthKit query lifecycle (start/stop live tracking)
+- `ExportViewModel`: Handles export-specific UI state (progress, filename generation)
+- `GoalCoachViewModel`: Manages LLM session lifecycle and conversation history
+- `EmbeddingManagementViewModel`: Admin-level cache operations not appropriate for DataStore
+- `GoalFormModel`: Form state model (complements DataStore, doesn't replace it)
 
 
 ## Documentation Research with doc-fetcher

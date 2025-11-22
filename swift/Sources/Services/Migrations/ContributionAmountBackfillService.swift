@@ -67,17 +67,12 @@ public final class ContributionAmountBackfillService: Sendable {
     /// - Throws: Database errors
     public func backfillContributions() async throws -> BackfillResult {
         try await database.write { db in
-            // Step 1: Find all contributions needing backfill
-            let sql = """
-                SELECT * FROM actionGoalContributions
-                WHERE contributionAmount IS NULL OR measureId IS NULL
-                """
-            let rows = try Row.fetchAll(db, sql: sql)
-
-            // Parse rows into ActionGoalContribution models
-            let nullContributions = try rows.map { row -> ActionGoalContribution in
-                try ActionGoalContribution(row: row)
-            }
+            // Step 1: Find all contributions needing backfill (SQLiteData syntax)
+            let nullContributions = try ActionGoalContribution
+                .where { contribution in
+                    contribution.contributionAmount == nil || contribution.measureId == nil
+                }
+                .fetchAll(db)
 
             var updated = 0
             var notMatched = 0
@@ -86,7 +81,7 @@ public final class ContributionAmountBackfillService: Sendable {
             // Step 2: Process each contribution
             for contribution in nullContributions {
                 // Step 2a: Query which measures this goal expects
-                guard let goal = try Goal.find(contribution.goalId).fetchOne(db) else {
+                guard let goal = try Goal.where { $0.id.eq(contribution.goalId) }.fetchOne(db) else {
                     continue  // Goal not found
                 }
 
@@ -144,12 +139,12 @@ public final class ContributionAmountBackfillService: Sendable {
     /// - Returns: Count of contributions with NULL contributionAmount or measureId
     public func countNeedingBackfill() async throws -> Int {
         try await database.read { db in
-            let sql = """
-                SELECT COUNT(*) as count
-                FROM actionGoalContributions
-                WHERE contributionAmount IS NULL OR measureId IS NULL
-                """
-            let count = try Int.fetchOne(db, sql: sql) ?? 0
+            // Use SQLiteData query builder syntax
+            let count = try ActionGoalContribution
+                .where { contribution in
+                    contribution.contributionAmount == nil || contribution.measureId == nil
+                }
+                .fetchCount(db)
             return count
         }
     }

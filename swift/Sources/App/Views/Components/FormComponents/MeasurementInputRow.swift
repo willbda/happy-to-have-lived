@@ -25,7 +25,6 @@
 
 import SwiftUI
 import Models
-import Dependencies
 import Services
 import SQLiteData
 
@@ -35,6 +34,8 @@ public struct MeasurementInputRow: View {
     let availableMeasures: [MeasureData]
     let onRemove: () -> Void
     let onMeasureCreated: (() async -> Void)?
+
+    @Environment(DataStore.self) private var dataStore
 
     @State private var showingCreateMeasure = false
     @State private var newMeasureUnit = ""
@@ -180,10 +181,16 @@ public struct MeasurementInputRow: View {
 
     /// Create a new measure and add it to the database
     ///
-    /// **Pattern**: Uses MeasureCoordinator.getOrCreate() for proper duplicate prevention
-    /// **Architecture**: UI → Coordinator → Repository → Database
+    /// **Pattern**: Uses DataStore.createMeasure() for centralized database access
+    /// **Architecture**: UI → DataStore → MeasureCoordinator → Database
     /// **Idempotent**: Returns existing measure if duplicate found (no error thrown)
     /// **Error Handling**: User-friendly ValidationError messages
+    ///
+    /// **Why DataStore?**
+    /// - Views (SwiftUI structs) can't use @Dependency property wrapper
+    /// - @Dependency only works on stored properties in classes
+    /// - DataStore provides single source of truth for database access
+    /// - ValueObservation automatically updates measures array
     private func createMeasure() async {
         isCreating = true
         defer { isCreating = false }
@@ -194,11 +201,8 @@ public struct MeasurementInputRow: View {
         let type = newMeasureType
 
         do {
-            @Dependency(\.defaultDatabase) var database
-
-            // Use MeasureCoordinator.getOrCreate() pattern
-            let coordinator = MeasureCoordinator(database: database)
-            let measure = try await coordinator.getOrCreate(
+            // Use DataStore for database access (correct pattern for Views)
+            let measure = try await dataStore.createMeasure(
                 unit: unit,
                 measureType: type,
                 title: title
@@ -207,7 +211,7 @@ public struct MeasurementInputRow: View {
             // Update UI to select newly created measure
             measureId = measure.id
 
-            // Notify parent (triggers DataStore.measures refresh)
+            // Notify parent (ValueObservation already updated DataStore.measures)
             await onMeasureCreated?()
 
             // Dismiss sheet
